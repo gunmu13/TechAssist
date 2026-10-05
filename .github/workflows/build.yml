@@ -13,13 +13,18 @@ jobs:
 
       - name: Unzip Source
         run: |
-          mkdir -p ./project
-          unzip -q *.zip -d ./project
-          if [ ! -f "./project/settings.gradle" ]; then
-            DIR=$(find ./project -name "settings.gradle" -exec dirname {} \; | head -n 1)
-            echo "项目目录为: $DIR"
-            mv $DIR/* ./project/ 2>/dev/null || true
-            mv $DIR/.[!.]* ./project/ 2>/dev/null || true
+          mkdir -p project
+          unzip -q *.zip -d project
+          # 自动处理各种文件夹嵌套，把真实的项目文件找出来
+          if [ -d "project/TechAssist" ]; then
+            mv project/TechAssist/* project/
+            mv project/TechAssist/.[!.]* project/ 2>/dev/null || true
+          elif [ ! -f "project/settings.gradle" ]; then
+            DIR=$(find project -name "settings.gradle" -exec dirname {} \; | head -n 1)
+            if [ ! -z "$DIR" ]; then
+              mv $DIR/* project/
+              mv $DIR/.[!.]* project/ 2>/dev/null || true
+            fi
           fi
 
       - name: Set up JDK 17
@@ -31,7 +36,7 @@ jobs:
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v3
         with:
-          gradle-version: 8.4 # ⭐ 强制使用8.4版本
+          gradle-version: 8.4 # ⭐ 强制使用8.4版本，解决之前的报错
 
       - name: Build Debug APK
         run: |
