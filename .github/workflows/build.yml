@@ -15,7 +15,6 @@ jobs:
         run: |
           mkdir -p ./project
           unzip -q *.zip -d ./project
-          # 自动寻找 settings.gradle 所在的真实项目根目录
           if [ ! -f "./project/settings.gradle" ]; then
             DIR=$(find ./project -name "settings.gradle" -exec dirname {} \; | head -n 1)
             echo "项目目录为: $DIR"
@@ -31,6 +30,8 @@ jobs:
 
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v3
+        with:
+          gradle-version: 8.4 # ⭐ 强制使用8.4版本
 
       - name: Build Debug APK
         run: |
