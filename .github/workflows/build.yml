@@ -52,7 +52,7 @@ jobs:
           android {
               namespace 'com.example.techassist'
               compileSdk 34
-              defaultConfig { applicationId "com.example.techassist"; minSdk 24; targetSdk 34; versionCode 20; versionName "20.0" }
+              defaultConfig { applicationId "com.example.techassist"; minSdk 24; targetSdk 34; versionCode 21; versionName "21.0" }
               buildTypes { release { minifyEnabled false } }
               compileOptions { sourceCompatibility JavaVersion.VERSION_17; targetCompatibility JavaVersion.VERSION_17 }
               kotlinOptions { jvmTarget = '17' }
@@ -124,33 +124,89 @@ jobs:
 
           cat << 'EOF' > app/src/main/java/com/example/techassist/AssistService.kt
           package com.example.techassist
-          import android.app.*; import android.content.ClipData; import android.content.ClipboardManager; import android.content.ContentValues
-          import android.content.Context; import android.content.Intent; import android.content.pm.ActivityInfo
-          import android.content.res.Configuration; import android.graphics.Bitmap; import android.graphics.Color; import android.graphics.PixelFormat
-          import android.hardware.camera2.CameraManager; import android.hardware.display.DisplayManager
-          import android.hardware.display.VirtualDisplay; import android.media.AudioManager; import android.media.ImageReader
-          import android.media.projection.MediaProjection; import android.media.projection.MediaProjectionManager
-          import android.net.Uri; import android.os.*; import android.provider.MediaStore; import android.provider.Settings
-          import android.view.Gravity; import android.view.LayoutInflater; import android.view.MotionEvent; import android.view.View
-          import android.view.WindowManager; import android.widget.*; import kotlin.math.roundToInt
+          import android.app.Activity
+          import android.app.Notification
+          import android.app.NotificationChannel
+          import android.app.NotificationManager
+          import android.app.Service
+          import android.content.ClipData
+          import android.content.ClipboardManager
+          import android.content.ContentValues
+          import android.content.Context
+          import android.content.Intent
+          import android.content.res.Configuration
+          import android.graphics.Bitmap
+          import android.graphics.Color
+          import android.graphics.PixelFormat
+          import android.hardware.camera2.CameraManager
+          import android.hardware.display.DisplayManager
+          import android.hardware.display.VirtualDisplay
+          import android.media.AudioManager
+          import android.media.ImageReader
+          import android.media.projection.MediaProjection
+          import android.media.projection.MediaProjectionManager
+          import android.net.Uri
+          import android.os.Build
+          import android.os.Handler
+          import android.os.IBinder
+          import android.os.Looper
+          import android.provider.MediaStore
+          import android.provider.Settings
+          import android.view.Gravity
+          import android.view.LayoutInflater
+          import android.view.MotionEvent
+          import android.view.View
+          import android.view.WindowManager
+          import android.widget.Button
+          import android.widget.LinearLayout
+          import android.widget.SeekBar
+          import android.widget.Switch
+          import android.widget.TextView
+          import android.widget.Toast
+          import kotlin.math.roundToInt
 
           class AssistService : Service() {
-              private lateinit var windowManager: WindowManager; private lateinit var audioManager: AudioManager; private lateinit var panel: View
+              private lateinit var windowManager: WindowManager
+              private lateinit var audioManager: AudioManager
+              private lateinit var panel: View
               private lateinit var params: WindowManager.LayoutParams
-              private lateinit var mainPanel: LinearLayout; private lateinit var miniIcon: TextView; private lateinit var sliderContainer: LinearLayout
-              private lateinit var tvBrightness: TextView; private lateinit var tvVolume: TextView; private lateinit var sbBrightness: SeekBar; private lateinit var sbVolume: SeekBar
-              private lateinit var btnMute: Button; private lateinit var btnStreamSwitch: Button; private lateinit var switchAuto: Switch
-              private lateinit var btnScreenshot: Button; private lateinit var btnRecord: Button
-              private lateinit var btnWeChat: Button; private lateinit var btnCamera: Button
-              private lateinit var btnFlashlight: Button; private lateinit var btnKeepScreenOn: Button; private lateinit var btnHome: Button
-              private lateinit var btnNight: Button; private lateinit var btnOrientation: Button; private lateinit var btnWifi: Button; private lateinit var btnBluetooth: Button
-              private lateinit var btnAirplane: Button; private lateinit var btnBattery: Button; private lateinit var btnPerm: Button; private lateinit var btnClipboard: Button
+              private lateinit var mainPanel: LinearLayout
+              private lateinit var miniIcon: TextView
+              private lateinit var sliderContainer: LinearLayout
+              private lateinit var tvBrightness: TextView
+              private lateinit var tvVolume: TextView
+              private lateinit var sbBrightness: SeekBar
+              private lateinit var sbVolume: SeekBar
+              private lateinit var btnMute: Button
+              private lateinit var btnStreamSwitch: Button
+              private lateinit var switchAuto: Switch
+              private lateinit var btnScreenshot: Button
+              private lateinit var btnRecord: Button
+              private lateinit var btnWeChat: Button
+              private lateinit var btnCamera: Button
+              private lateinit var btnFlashlight: Button
+              private lateinit var btnKeepScreenOn: Button
+              private lateinit var btnHome: Button
+              private lateinit var btnNight: Button
+              private lateinit var btnOrientation: Button
+              private lateinit var btnWifi: Button
+              private lateinit var btnBluetooth: Button
+              private lateinit var btnAirplane: Button
+              private lateinit var btnBattery: Button
+              private lateinit var btnPerm: Button
+              private lateinit var btnClipboard: Button
               private lateinit var colorDots: LinearLayout
-              private var currentStream = AudioManager.STREAM_MUSIC; private var isMuted = false
-              private var panelWidthPx = 0; private var currentAlpha = 1.0f
-              private var isRecording = false; private var isFlashlightOn = false; private var isKeepScreenOn = false
-              private var isNightMode = false; private var orientationIndex = 0
-              private var cameraManager: CameraManager? = null; private var cameraId: String? = null
+              private var currentStream = AudioManager.STREAM_MUSIC
+              private var isMuted = false
+              private var panelWidthPx = 0
+              private var currentAlpha = 1.0f
+              private var isRecording = false
+              private var isFlashlightOn = false
+              private var isKeepScreenOn = false
+              private var isNightMode = false
+              private var orientationIndex = 0
+              private var cameraManager: CameraManager? = null
+              private var cameraId: String? = null
               private var normalBrightness = 0.6f
 
               companion object {
@@ -162,8 +218,10 @@ jobs:
               }
 
               override fun onBind(intent: Intent?): IBinder? = null
+
               override fun onCreate() {
-                  super.onCreate(); startForegroundNotification()
+                  super.onCreate()
+                  startForegroundNotification()
                   windowManager = getSystemService(WINDOW_SERVICE) as WindowManager
                   audioManager = getSystemService(AUDIO_SERVICE) as AudioManager
                   mediaProjectionManager = getSystemService(Context.MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
@@ -181,7 +239,8 @@ jobs:
                   val notification = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                       Notification.Builder(this, channelId).setContentTitle("科技辅助运行中").setSmallIcon(android.R.drawable.ic_menu_compass).build()
                   } else {
-                      @Suppress("DEPRECATION") Notification.Builder(this).setContentTitle("科技辅助运行中").setSmallIcon(android.R.drawable.ic_menu_compass).build()
+                      @Suppress("DEPRECATION")
+                      Notification.Builder(this).setContentTitle("科技辅助运行中").setSmallIcon(android.R.drawable.ic_menu_compass).build()
                   }
                   startForeground(1, notification)
               }
@@ -190,30 +249,51 @@ jobs:
 
               private fun buildPanel() {
                   panel = LayoutInflater.from(this).inflate(R.layout.window_assist, null)
-                  val type = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY else @Suppress("DEPRECATION") WindowManager.LayoutParams.TYPE_PHONE
+                  val type = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY else WindowManager.LayoutParams.TYPE_PHONE
                   panelWidthPx = dp(310)
                   params = WindowManager.LayoutParams(panelWidthPx, WindowManager.LayoutParams.WRAP_CONTENT, type, WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN, PixelFormat.TRANSLUCENT).apply {
-                      gravity = Gravity.TOP or Gravity.START; x = dp(16); y = dp(120); alpha = currentAlpha
+                      gravity = Gravity.TOP or Gravity.START
+                      x = dp(16)
+                      y = dp(120)
+                      alpha = currentAlpha
                   }
                   windowManager.addView(panel, params)
 
-                  mainPanel = panel.findViewById(R.id.mainPanel); miniIcon = panel.findViewById(R.id.miniIcon)
+                  mainPanel = panel.findViewById(R.id.mainPanel)
+                  miniIcon = panel.findViewById(R.id.miniIcon)
                   sliderContainer = panel.findViewById(R.id.sliderContainer)
-                  tvBrightness = panel.findViewById(R.id.tvBrightnessValue); tvVolume = panel.findViewById(R.id.tvVolumeValue)
-                  sbBrightness = panel.findViewById(R.id.sbBrightness); sbVolume = panel.findViewById(R.id.sbVolume)
-                  btnMute = panel.findViewById(R.id.btnMute); btnStreamSwitch = panel.findViewById(R.id.btnStreamSwitch); switchAuto = panel.findViewById(R.id.switchAutoBrightness)
-                  btnScreenshot = panel.findViewById(R.id.btnScreenshot); btnRecord = panel.findViewById(R.id.btnRecord)
-                  btnWeChat = panel.findViewById(R.id.btnWeChat); btnCamera = panel.findViewById(R.id.btnCamera)
-                  btnFlashlight = panel.findViewById(R.id.btnFlashlight); btnKeepScreenOn = panel.findViewById(R.id.btnKeepScreenOn); btnHome = panel.findViewById(R.id.btnHome)
-                  btnNight = panel.findViewById(R.id.btnNight); btnOrientation = panel.findViewById(R.id.btnOrientation)
-                  btnWifi = panel.findViewById(R.id.btnWifi); btnBluetooth = panel.findViewById(R.id.btnBluetooth); btnAirplane = panel.findViewById(R.id.btnAirplane)
-                  btnBattery = panel.findViewById(R.id.btnBattery); btnPerm = panel.findViewById(R.id.btnPerm); btnClipboard = panel.findViewById(R.id.btnClipboard)
+                  tvBrightness = panel.findViewById(R.id.tvBrightnessValue)
+                  tvVolume = panel.findViewById(R.id.tvVolumeValue)
+                  sbBrightness = panel.findViewById(R.id.sbBrightness)
+                  sbVolume = panel.findViewById(R.id.sbVolume)
+                  btnMute = panel.findViewById(R.id.btnMute)
+                  btnStreamSwitch = panel.findViewById(R.id.btnStreamSwitch)
+                  switchAuto = panel.findViewById(R.id.switchAutoBrightness)
+                  btnScreenshot = panel.findViewById(R.id.btnScreenshot)
+                  btnRecord = panel.findViewById(R.id.btnRecord)
+                  btnWeChat = panel.findViewById(R.id.btnWeChat)
+                  btnCamera = panel.findViewById(R.id.btnCamera)
+                  btnFlashlight = panel.findViewById(R.id.btnFlashlight)
+                  btnKeepScreenOn = panel.findViewById(R.id.btnKeepScreenOn)
+                  btnHome = panel.findViewById(R.id.btnHome)
+                  btnNight = panel.findViewById(R.id.btnNight)
+                  btnOrientation = panel.findViewById(R.id.btnOrientation)
+                  btnWifi = panel.findViewById(R.id.btnWifi)
+                  btnBluetooth = panel.findViewById(R.id.btnBluetooth)
+                  btnAirplane = panel.findViewById(R.id.btnAirplane)
+                  btnBattery = panel.findViewById(R.id.btnBattery)
+                  btnPerm = panel.findViewById(R.id.btnPerm)
+                  btnClipboard = panel.findViewById(R.id.btnClipboard)
                   colorDots = panel.findViewById(R.id.colorDots)
 
                   setupDrag(panel.findViewById(R.id.dragHandle))
                   setupMiniDrag(miniIcon)
                   setupResizeHandle(panel.findViewById(R.id.resizeHandle))
-                  setupBrightness(); setupVolume(); setupButtons(); setupAlphaSlider(); setupColorDots()
+                  setupBrightness()
+                  setupVolume()
+                  setupButtons()
+                  setupAlphaSlider()
+                  setupColorDots()
 
                   panel.findViewById<View>(R.id.btnClose).setOnClickListener { stopSelf() }
                   panel.findViewById<View>(R.id.btnMinimize).setOnClickListener { minimize() }
@@ -223,19 +303,22 @@ jobs:
 
               private fun setupColorDots() {
                   val colors = listOf(
-                      "#22D3EE" to R.drawable.bg_panel,
-                      "#3B82F6" to R.drawable.bg_panel_blue,
-                      "#A855F7" to R.drawable.bg_panel_purple,
-                      "#10B981" to R.drawable.bg_panel_green,
-                      "#EF4444" to R.drawable.bg_panel_red
+                      Color.parseColor("#22D3EE") to R.drawable.bg_panel,
+                      Color.parseColor("#3B82F6") to R.drawable.bg_panel_blue,
+                      Color.parseColor("#A855F7") to R.drawable.bg_panel_purple,
+                      Color.parseColor("#10B981") to R.drawable.bg_panel_green,
+                      Color.parseColor("#EF4444") to R.drawable.bg_panel_red
                   )
                   colorDots.removeAllViews()
-                  for ((hex, drawable) in colors) {
+                  for ((color, drawable) in colors) {
                       val dot = View(this).apply {
                           layoutParams = LinearLayout.LayoutParams(dp(22), dp(22)).apply { marginEnd = dp(8) }
                           background = getDrawable(R.drawable.color_dot)
-                          background.setTint(Color.parseColor(hex))
-                          setOnClickListener { mainPanel.setBackgroundResource(drawable); Toast.makeText(this@AssistService, "主题已切换", Toast.LENGTH_SHORT).show() }
+                          background.setTint(color)
+                          setOnClickListener {
+                              mainPanel.setBackgroundResource(drawable)
+                              Toast.makeText(this@AssistService, "主题已切换", Toast.LENGTH_SHORT).show()
+                          }
                       }
                       colorDots.addView(dot)
                   }
@@ -259,15 +342,21 @@ jobs:
               }
 
               private fun minimize() {
-                  mainPanel.visibility = View.GONE; miniIcon.visibility = View.VISIBLE
-                  params.width = WindowManager.LayoutParams.WRAP_CONTENT; params.height = WindowManager.LayoutParams.WRAP_CONTENT
+                  mainPanel.visibility = View.GONE
+                  miniIcon.visibility = View.VISIBLE
+                  params.width = WindowManager.LayoutParams.WRAP_CONTENT
+                  params.height = WindowManager.LayoutParams.WRAP_CONTENT
                   windowManager.updateViewLayout(panel, params)
               }
+
               private fun restore() {
-                  mainPanel.visibility = View.VISIBLE; miniIcon.visibility = View.GONE
-                  params.width = panelWidthPx; params.height = WindowManager.LayoutParams.WRAP_CONTENT
+                  mainPanel.visibility = View.VISIBLE
+                  miniIcon.visibility = View.GONE
+                  params.width = panelWidthPx
+                  params.height = WindowManager.LayoutParams.WRAP_CONTENT
                   windowManager.updateViewLayout(panel, params)
               }
+
               private fun toggleHideButtons() {
                   sliderContainer.visibility = if (sliderContainer.visibility == View.GONE) View.VISIBLE else View.GONE
               }
@@ -277,7 +366,11 @@ jobs:
                   sbAlpha.progress = (currentAlpha * 100).toInt()
                   sbAlpha.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
                       override fun onProgressChanged(seekBar: SeekBar?, progress: Int, fromUser: Boolean) {
-                          if (fromUser) { currentAlpha = (progress.coerceIn(20, 100)) / 100f; params.alpha = currentAlpha; windowManager.updateViewLayout(panel, params) }
+                          if (fromUser) {
+                              currentAlpha = (progress.coerceIn(20, 100)) / 100f
+                              params.alpha = currentAlpha
+                              windowManager.updateViewLayout(panel, params)
+                          }
                       }
                       override fun onStartTrackingTouch(seekBar: SeekBar?) {}
                       override fun onStopTrackingTouch(seekBar: SeekBar?) {}
@@ -313,18 +406,33 @@ jobs:
                   btnClipboard.setOnClickListener { showClipboard() }
 
                   switchAuto.setOnCheckedChangeListener { _, isChecked ->
-                      try { Settings.System.putInt(contentResolver, Settings.System.SCREEN_BRIGHTNESS_MODE, if (isChecked) Settings.System.SCREEN_BRIGHTNESS_MODE_AUTOMATIC else Settings.System.SCREEN_BRIGHTNESS_MODE_MANUAL); sbBrightness.isEnabled = !isChecked } catch (e: Exception) { switchAuto.isChecked = !isChecked }
+                      try {
+                          Settings.System.putInt(contentResolver, Settings.System.SCREEN_BRIGHTNESS_MODE, if (isChecked) Settings.System.SCREEN_BRIGHTNESS_MODE_AUTOMATIC else Settings.System.SCREEN_BRIGHTNESS_MODE_MANUAL)
+                          sbBrightness.isEnabled = !isChecked
+                      } catch (e: Exception) {
+                          switchAuto.isChecked = !isChecked
+                      }
                   }
-                  try { val mode = Settings.System.getInt(contentResolver, Settings.System.SCREEN_BRIGHTNESS_MODE); switchAuto.isChecked = mode == Settings.System.SCREEN_BRIGHTNESS_MODE_AUTOMATIC; sbBrightness.isEnabled = !switchAuto.isChecked } catch (e: Exception) {}
+                  try {
+                      val mode = Settings.System.getInt(contentResolver, Settings.System.SCREEN_BRIGHTNESS_MODE)
+                      switchAuto.isChecked = mode == Settings.System.SCREEN_BRIGHTNESS_MODE_AUTOMATIC
+                      sbBrightness.isEnabled = !switchAuto.isChecked
+                  } catch (e: Exception) {}
               }
 
               private fun toggleFlashlight() {
                   try {
-                      val id = cameraId ?: run { Toast.makeText(this, "本机无闪光灯", Toast.LENGTH_SHORT).show(); return }
+                      val id = cameraId
+                      if (id == null) {
+                          Toast.makeText(this, "本机无闪光灯", Toast.LENGTH_SHORT).show()
+                          return
+                      }
                       isFlashlightOn = !isFlashlightOn
                       cameraManager?.setTorchMode(id, isFlashlightOn)
                       btnFlashlight.text = if (isFlashlightOn) "🔆 关灯" else "🔦 手电"
-                  } catch (e: Exception) { Toast.makeText(this, "手电筒失败: ${e.message}", Toast.LENGTH_SHORT).show() }
+                  } catch (e: Exception) {
+                      Toast.makeText(this, "手电筒失败", Toast.LENGTH_SHORT).show()
+                  }
               }
 
               private fun toggleKeepScreenOn() {
@@ -337,9 +445,14 @@ jobs:
 
               private fun goHome() {
                   try {
-                      val intent = Intent(Intent.ACTION_MAIN).apply { addCategory(Intent.CATEGORY_HOME); flags = Intent.FLAG_ACTIVITY_NEW_TASK }
+                      val intent = Intent(Intent.ACTION_MAIN).apply {
+                          addCategory(Intent.CATEGORY_HOME)
+                          flags = Intent.FLAG_ACTIVITY_NEW_TASK
+                      }
                       startActivity(intent)
-                  } catch (e: Exception) { Toast.makeText(this, "回桌面失败", Toast.LENGTH_SHORT).show() }
+                  } catch (e: Exception) {
+                      Toast.makeText(this, "回桌面失败", Toast.LENGTH_SHORT).show()
+                  }
               }
 
               private fun toggleNightMode() {
@@ -358,16 +471,26 @@ jobs:
 
               private fun cycleOrientation() {
                   orientationIndex = (orientationIndex + 1) % 3
-                  btnOrientation.text = when (orientationIndex) { 0 -> "🔄 自动" 1 -> "📱 竖屏" else -> "📺 横屏" }
-                  Toast.makeText(this, "方向切换需系统设置配合（本按钮循环提示）", Toast.LENGTH_SHORT).show()
+                  btnOrientation.text = when (orientationIndex) {
+                      0 -> "🔄 自动"
+                      1 -> "📱 竖屏"
+                      else -> "📺 横屏"
+                  }
+                  Toast.makeText(this, "方向切换需系统配合", Toast.LENGTH_SHORT).show()
               }
 
               private fun openSetting(action: String) {
                   try {
-                      val intent = if (action == Settings.ACTION_APPLICATION_DETAILS_SETTINGS) Intent(action, Uri.parse("package:$packageName")) else Intent(action)
+                      val intent = if (action == Settings.ACTION_APPLICATION_DETAILS_SETTINGS) {
+                          Intent(action, Uri.parse("package:$packageName"))
+                      } else {
+                          Intent(action)
+                      }
                       intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                       startActivity(intent)
-                  } catch (e: Exception) { Toast.makeText(this, "跳转失败", Toast.LENGTH_SHORT).show() }
+                  } catch (e: Exception) {
+                      Toast.makeText(this, "跳转失败", Toast.LENGTH_SHORT).show()
+                  }
               }
 
               private fun showClipboard() {
@@ -375,13 +498,19 @@ jobs:
                       val cm = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
                       val clip: ClipData? = cm.primaryClip
                       val text = clip?.getItemAt(0)?.text?.toString() ?: "剪贴板为空"
-                      AlertDialog.Builder(this, android.R.style.Theme_DeviceDefault_Dialog_Alert).setTitle("剪贴板内容").setMessage(text).setPositiveButton("确定", null).show()
-                  } catch (e: Exception) { Toast.makeText(this, "读取失败", Toast.LENGTH_SHORT).show() }
+                      Toast.makeText(this, "剪贴板: $text", Toast.LENGTH_LONG).show()
+                  } catch (e: Exception) {
+                      Toast.makeText(this, "读取失败", Toast.LENGTH_SHORT).show()
+                  }
               }
 
               private fun takeScreenshot() {
-                  try { val mgr = mediaProjectionManager ?: return; startActivityForResult(mgr.createScreenCaptureIntent(), REQ_CODE_CAPTURE) }
-                  catch (e: Exception) { Toast.makeText(this, "截图失败", Toast.LENGTH_SHORT).show() }
+                  try {
+                      val mgr = mediaProjectionManager ?: return
+                      startActivityForResult(mgr.createScreenCaptureIntent(), REQ_CODE_CAPTURE)
+                  } catch (e: Exception) {
+                      Toast.makeText(this, "截图失败", Toast.LENGTH_SHORT).show()
+                  }
               }
 
               private fun handleScreenshot(resultCode: Int, data: Intent?) {
@@ -389,39 +518,64 @@ jobs:
                       val mgr = mediaProjectionManager ?: return
                       val projection = mgr.getMediaProjection(resultCode, data!!)
                       val metrics = resources.displayMetrics
-                      val w = metrics.widthPixels; val h = metrics.heightPixels; val dpi = metrics.densityDpi
+                      val w = metrics.widthPixels
+                      val h = metrics.heightPixels
+                      val dpi = metrics.densityDpi
                       val reader = ImageReader.newInstance(w, h, PixelFormat.RGBA_8888, 2)
                       val vd = projection.createVirtualDisplay("Screenshot", w, h, dpi, DisplayManager.VIRTUAL_DISPLAY_FLAG_AUTO_MIRROR, reader.surface, null, null)
                       Handler(Looper.getMainLooper()).postDelayed({
                           try {
                               val image = reader.acquireLatestImage()
                               if (image != null) {
-                                  val planes = image.planes; val buffer = planes[0].buffer; val pixelStride = planes[0].pixelStride; val rowStride = planes[0].rowStride
+                                  val planes = image.planes
+                                  val buffer = planes[0].buffer
+                                  val pixelStride = planes[0].pixelStride
+                                  val rowStride = planes[0].rowStride
                                   val rowPadding = rowStride - pixelStride * w
                                   val bmp = Bitmap.createBitmap(w + rowPadding / pixelStride, h, Bitmap.Config.ARGB_8888)
-                                  bmp.copyPixelsFromBuffer(buffer); image.close()
-                                  saveBitmap(bmp); Toast.makeText(this, "截图已保存", Toast.LENGTH_SHORT).show()
+                                  bmp.copyPixelsFromBuffer(buffer)
+                                  image.close()
+                                  saveBitmap(bmp)
+                                  Toast.makeText(this, "截图已保存", Toast.LENGTH_SHORT).show()
                               }
-                              reader.close(); vd.release(); projection.stop()
-                          } catch (e: Exception) { Toast.makeText(this, "截图失败: ${e.message}", Toast.LENGTH_SHORT).show() }
+                              reader.close()
+                              vd.release()
+                              projection.stop()
+                          } catch (e: Exception) {
+                              Toast.makeText(this, "截图失败", Toast.LENGTH_SHORT).show()
+                          }
                       }, 800)
-                  } catch (e: Exception) { Toast.makeText(this, "截图失败", Toast.LENGTH_SHORT).show() }
+                  } catch (e: Exception) {
+                      Toast.makeText(this, "截图失败", Toast.LENGTH_SHORT).show()
+                  }
               }
 
               private fun saveBitmap(bmp: Bitmap) {
                   val name = "TechAssist_${System.currentTimeMillis()}.png"
-                  val values = ContentValues().apply { put(MediaStore.Images.Media.DISPLAY_NAME, name); put(MediaStore.Images.Media.MIME_TYPE, "image/png"); put(MediaStore.Images.Media.RELATIVE_PATH, "Pictures/TechAssist") }
+                  val values = ContentValues().apply {
+                      put(MediaStore.Images.Media.DISPLAY_NAME, name)
+                      put(MediaStore.Images.Media.MIME_TYPE, "image/png")
+                      put(MediaStore.Images.Media.RELATIVE_PATH, "Pictures/TechAssist")
+                  }
                   val uri = contentResolver.insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, values) ?: return
                   contentResolver.openOutputStream(uri)?.use { bmp.compress(Bitmap.CompressFormat.PNG, 100, it) }
               }
 
               private fun toggleRecord() {
                   if (isRecording) {
-                      try { virtualDisplay?.release(); mediaProjection?.stop() } catch (e: Exception) {}
-                      isRecording = false; btnRecord.text = "⏺ 录屏"
+                      try {
+                          virtualDisplay?.release()
+                          mediaProjection?.stop()
+                      } catch (e: Exception) {}
+                      isRecording = false
+                      btnRecord.text = "⏺ 录屏"
                   } else {
-                      try { val mgr = mediaProjectionManager ?: return; startActivityForResult(mgr.createScreenCaptureIntent(), REQ_CODE_RECORD) }
-                      catch (e: Exception) { Toast.makeText(this, "需要录屏权限", Toast.LENGTH_SHORT).show() }
+                      try {
+                          val mgr = mediaProjectionManager ?: return
+                          startActivityForResult(mgr.createScreenCaptureIntent(), REQ_CODE_RECORD)
+                      } catch (e: Exception) {
+                          Toast.makeText(this, "需要录屏权限", Toast.LENGTH_SHORT).show()
+                      }
                   }
               }
 
@@ -430,25 +584,38 @@ jobs:
                       val mgr = mediaProjectionManager ?: return
                       mediaProjection = mgr.getMediaProjection(resultCode, data!!)
                       val metrics = resources.displayMetrics
-                      val w = metrics.widthPixels; val h = metrics.heightPixels; val dpi = metrics.densityDpi
+                      val w = metrics.widthPixels
+                      val h = metrics.heightPixels
+                      val dpi = metrics.densityDpi
                       val reader = ImageReader.newInstance(w, h, PixelFormat.RGBA_8888, 2)
                       virtualDisplay = mediaProjection!!.createVirtualDisplay("Recorder", w, h, dpi, DisplayManager.VIRTUAL_DISPLAY_FLAG_AUTO_MIRROR, reader.surface, null, null)
-                      isRecording = true; btnRecord.text = "⏹ 停止"
-                  } catch (e: Exception) { Toast.makeText(this, "录屏失败", Toast.LENGTH_SHORT).show() }
+                      isRecording = true
+                      btnRecord.text = "⏹ 停止"
+                  } catch (e: Exception) {
+                      Toast.makeText(this, "录屏失败", Toast.LENGTH_SHORT).show()
+                  }
               }
 
               private fun launchApp(pkg: String) {
                   try {
                       val intent = packageManager.getLaunchIntentForPackage(pkg)
-                      if (intent != null) { intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK); startActivity(intent) }
-                      else Toast.makeText(this, "未安装该应用", Toast.LENGTH_SHORT).show()
-                  } catch (e: Exception) { Toast.makeText(this, "启动失败", Toast.LENGTH_SHORT).show() }
+                      if (intent != null) {
+                          intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                          startActivity(intent)
+                      } else {
+                          Toast.makeText(this, "未安装该应用", Toast.LENGTH_SHORT).show()
+                      }
+                  } catch (e: Exception) {
+                      Toast.makeText(this, "启动失败", Toast.LENGTH_SHORT).show()
+                  }
               }
 
               private fun updateVolumeSlider() {
-                  val max = audioManager.getStreamMaxVolume(currentStream); val cur = audioManager.getStreamVolume(currentStream)
+                  val max = audioManager.getStreamMaxVolume(currentStream)
+                  val cur = audioManager.getStreamVolume(currentStream)
                   val percent = if (max <= 0) 50 else (cur * 100f / max).roundToInt()
-                  sbVolume.progress = percent; tvVolume.text = "$percent%"
+                  sbVolume.progress = percent
+                  tvVolume.text = "$percent%"
               }
 
               private fun setupDrag(handle: View) {
@@ -462,16 +629,19 @@ jobs:
               }
 
               private fun setupResizeHandle(handle: View) {
-                  var startWidth = 0; var downX = 0f
+                  var startWidth = 0
+                  var downX = 0f
                   handle.setOnTouchListener { _, event -> when (event.action) {
                       MotionEvent.ACTION_DOWN -> { startWidth = panelWidthPx; downX = event.rawX; true }
                       MotionEvent.ACTION_MOVE -> {
                           val deltaX = event.rawX - downX
                           val screenWidth = resources.displayMetrics.widthPixels
                           val newWidth = (startWidth + deltaX).toInt().coerceIn(dp(180), screenWidth - dp(16))
-                          params.width = newWidth; params.height = WindowManager.LayoutParams.WRAP_CONTENT
+                          params.width = newWidth
+                          params.height = WindowManager.LayoutParams.WRAP_CONTENT
                           panelWidthPx = newWidth
-                          windowManager.updateViewLayout(panel, params); true
+                          windowManager.updateViewLayout(panel, params)
+                          true
                       }
                       else -> false
                   } }
@@ -479,29 +649,50 @@ jobs:
 
               private fun setupBrightness() {
                   val current = currentBrightnessPercent()
-                  sbBrightness.max = 100; sbBrightness.progress = current; tvBrightness.text = "$current%"
+                  sbBrightness.max = 100
+                  sbBrightness.progress = current
+                  tvBrightness.text = "$current%"
                   sbBrightness.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
-                      override fun onProgressChanged(seekBar: SeekBar?, progress: Int, fromUser: Boolean) { tvBrightness.text = "$progress%"; if (fromUser) applyBrightness(progress) }
-                      override fun onStartTrackingTouch(seekBar: SeekBar?) {}; override fun onStopTrackingTouch(seekBar: SeekBar?) {}
+                      override fun onProgressChanged(seekBar: SeekBar?, progress: Int, fromUser: Boolean) {
+                          tvBrightness.text = "$progress%"
+                          if (fromUser) applyBrightness(progress)
+                      }
+                      override fun onStartTrackingTouch(seekBar: SeekBar?) {}
+                      override fun onStopTrackingTouch(seekBar: SeekBar?) {}
                   })
               }
 
               private fun applyBrightness(percent: Int) {
                   val value = (percent.coerceIn(1, 100) * 255f / 100f).roundToInt().coerceIn(1, 255)
-                  try { Settings.System.putInt(contentResolver, Settings.System.SCREEN_BRIGHTNESS_MODE, Settings.System.SCREEN_BRIGHTNESS_MODE_MANUAL); Settings.System.putInt(contentResolver, Settings.System.SCREEN_BRIGHTNESS, value) } catch (e: Exception) {}
-                  try { params.screenBrightness = value / 255f; windowManager.updateViewLayout(panel, params) } catch (e: Exception) {}
+                  try {
+                      Settings.System.putInt(contentResolver, Settings.System.SCREEN_BRIGHTNESS_MODE, Settings.System.SCREEN_BRIGHTNESS_MODE_MANUAL)
+                      Settings.System.putInt(contentResolver, Settings.System.SCREEN_BRIGHTNESS, value)
+                  } catch (e: Exception) {}
+                  try {
+                      params.screenBrightness = value / 255f
+                      windowManager.updateViewLayout(panel, params)
+                  } catch (e: Exception) {}
               }
 
               private fun currentBrightnessPercent(): Int {
                   if (params.screenBrightness in 0f..1f) return (params.screenBrightness * 100f).roundToInt().coerceIn(1, 100)
-                  return try { val v = Settings.System.getInt(contentResolver, Settings.System.SCREEN_BRIGHTNESS, 128); (v * 100f / 255f).roundToInt().coerceIn(1, 100) } catch (e: Exception) { 50 }
+                  return try {
+                      val v = Settings.System.getInt(contentResolver, Settings.System.SCREEN_BRIGHTNESS, 128)
+                      (v * 100f / 255f).roundToInt().coerceIn(1, 100)
+                  } catch (e: Exception) {
+                      50
+                  }
               }
 
               private fun setupVolume() {
                   updateVolumeSlider()
                   sbVolume.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
-                      override fun onProgressChanged(seekBar: SeekBar?, progress: Int, fromUser: Boolean) { tvVolume.text = "$progress%"; if (fromUser) applyVolume(progress) }
-                      override fun onStartTrackingTouch(seekBar: SeekBar?) {}; override fun onStopTrackingTouch(seekBar: SeekBar?) {}
+                      override fun onProgressChanged(seekBar: SeekBar?, progress: Int, fromUser: Boolean) {
+                          tvVolume.text = "$progress%"
+                          if (fromUser) applyVolume(progress)
+                      }
+                      override fun onStartTrackingTouch(seekBar: SeekBar?) {}
+                      override fun onStopTrackingTouch(seekBar: SeekBar?) {}
                   })
               }
 
@@ -510,14 +701,19 @@ jobs:
                       val max = audioManager.getStreamMaxVolume(currentStream)
                       val target = (percent.coerceIn(0, 100) / 100f * max).roundToInt().coerceIn(0, max)
                       val current = audioManager.getStreamVolume(currentStream)
-                      if (target > current) repeat(target - current) { audioManager.adjustStreamVolume(currentStream, AudioManager.ADJUST_RAISE, AudioManager.FLAG_SHOW_UI) }
-                      else if (target < current) repeat(current - target) { audioManager.adjustStreamVolume(currentStream, AudioManager.ADJUST_LOWER, AudioManager.FLAG_SHOW_UI) }
+                      if (target > current) {
+                          repeat(target - current) { audioManager.adjustStreamVolume(currentStream, AudioManager.ADJUST_RAISE, AudioManager.FLAG_SHOW_UI) }
+                      } else if (target < current) {
+                          repeat(current - target) { audioManager.adjustStreamVolume(currentStream, AudioManager.ADJUST_LOWER, AudioManager.FLAG_SHOW_UI) }
+                      }
                       audioManager.setStreamVolume(currentStream, target, AudioManager.FLAG_SHOW_UI)
-                      isMuted = target == 0; btnMute.text = if (isMuted) "🔇 已静音" else "🔊 正常"
-                  } catch (e: Exception) { Toast.makeText(this, "当前机型暂不支持音量调节", Toast.LENGTH_SHORT).show() }
+                      isMuted = target == 0
+                      btnMute.text = if (isMuted) "🔇 已静音" else "🔊 正常"
+                  } catch (e: Exception) {
+                      Toast.makeText(this, "音量调节失败", Toast.LENGTH_SHORT).show()
+                  }
               }
 
-              @Deprecated("Deprecated in Java")
               override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
                   super.onActivityResult(requestCode, resultCode, data)
                   if (resultCode != Activity.RESULT_OK) return
@@ -529,10 +725,18 @@ jobs:
 
               override fun onConfigurationChanged(newConfig: Configuration) {
                   super.onConfigurationChanged(newConfig)
-                  if (::panel.isInitialized) { val screenWidth = resources.displayMetrics.widthPixels; if (panelWidthPx > screenWidth - dp(16)) { panelWidthPx = screenWidth - dp(16); params.width = panelWidthPx; windowManager.updateViewLayout(panel, params) } }
+                  if (::panel.isInitialized) {
+                      val screenWidth = resources.displayMetrics.widthPixels
+                      if (panelWidthPx > screenWidth - dp(16)) {
+                          panelWidthPx = screenWidth - dp(16)
+                          params.width = panelWidthPx
+                          windowManager.updateViewLayout(panel, params)
+                      }
+                  }
               }
 
               private fun dp(v: Int): Int = (v * resources.displayMetrics.density).roundToInt()
+
               override fun onDestroy() {
                   super.onDestroy()
                   try { virtualDisplay?.release(); mediaProjection?.stop() } catch (_: Exception) {}
