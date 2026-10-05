@@ -11,7 +11,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Unzip and Inspect
+      - name: Unzip and Fix Names
         run: |
           mkdir -p project
           unzip -q *.zip -d project
@@ -26,20 +26,21 @@ jobs:
               mv $DIR/.[!.]* project/ 2>/dev/null || true
             fi
           fi
-          echo "===== 文件结构检查 ====="
-          find . -type f | sort
-          echo "========================"
 
-      - name: Auto Fix Path (如果文件位置不对，自动纠正)
-        run: |
           cd project
-          # 如果 app/src/main/AndroidManifest.xml 不存在，但找到了它，就自动移回去
+          # ⭐ 魔法操作：自动删除所有文件名和文件夹名中的空格
+          find . -name "* *" | while read file; do
+            newfile=$(echo "$file" | tr -d ' ')
+            mv "$file" "$newfile"
+          done
+
+          # 自动修复 AndroidManifest.xml 位置
           if [ ! -f "app/src/main/AndroidManifest.xml" ]; then
             FOUND=$(find . -name "AndroidManifest.xml" | head -n 1)
             if [ ! -z "$FOUND" ]; then
               echo "找到 AndroidManifest.xml，位置在: $FOUND，自动修复中..."
               mkdir -p app/src/main
-              mv $FOUND app/src/main/AndroidManifest.xml
+              cp "$FOUND" app/src/main/AndroidManifest.xml
             else
               echo "⚠️ 严重错误：你的压缩包里根本没有 AndroidManifest.xml，请去 MT 管理器里检查！"
               exit 1
