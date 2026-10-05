@@ -1,4 +1,4 @@
-name: Build APK
+name: Build Native APK
 
 on:
   push:
@@ -22,28 +22,189 @@ jobs:
         with:
           gradle-version: 8.4
 
-      - name: Build APK (自动消灭空格)
+      - name: Generate Android Project Files
         run: |
-          mkdir -p extracted
-          # 1. 精准解压
-          unzip -q TechAssist.zip -d extracted
-          cd extracted
+          # 1. 建立完整的目录结构
+          mkdir -p app/src/main/java/com/example/techassist
+          mkdir -p app/src/main/res/layout
+          mkdir -p app/src/main/res/drawable
+          mkdir -p app/src/main/res/values
 
-          # 2. ⭐ 魔法核心：从底层往上，把所有文件/文件夹名字里的空格全部删掉！
-          find . -depth -name "* *" | while read f; do
-            mv "$f" "$(echo "$f" | tr -d ' ')" 2>/dev/null || true
-          done
+          # 2. 生成所有代码文件（使用 'EOF' 确保特殊符号不被转义）
+          
+          cat << 'EOF' > settings.gradle
+          pluginManagement { repositories { google(); mavenCentral(); gradlePluginPortal() } }
+          dependencyResolutionManagement { repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS); repositories { google(); mavenCentral() } }
+          rootProject.name = "TechAssist"
+          include ':app'
+          EOF
 
-          # 3. 自动寻找真正的项目根目录（以 settings.gradle 为标志）
-          PROJECT_DIR=$(find . -name "settings.gradle" -exec dirname {} \; | head -n 1)
-          echo "✅ 找到项目文件夹: $PROJECT_DIR"
-          cd "$PROJECT_DIR"
+          cat << 'EOF' > build.gradle
+          plugins { id 'com.android.application' version '8.1.4' apply false; id 'org.jetbrains.kotlin.android' version '1.9.10' apply false }
+          EOF
 
-          # 4. 开始编译
-          gradle assembleDebug --no-daemon
+          cat << 'EOF' > gradle.properties
+          org.gradle.jvmargs=-Xmx2048m -Dfile.encoding=UTF-8
+          android.useAndroidX=true
+          kotlin.code.style=official
+          android.nonTransitiveRClass=true
+          EOF
+
+          cat << 'EOF' > app/build.gradle
+          plugins { id 'com.android.application'; id 'org.jetbrains.kotlin.android' }
+          android {
+              namespace 'com.example.techassist'
+              compileSdk 34
+              defaultConfig { applicationId "com.example.techassist"; minSdk 24; targetSdk 34; versionCode 1; versionName "1.0" }
+              buildTypes { release { minifyEnabled false } }
+              compileOptions { sourceCompatibility JavaVersion.VERSION_17; targetCompatibility JavaVersion.VERSION_17 }
+              kotlinOptions { jvmTarget = '17' }
+          }
+          dependencies { implementation 'androidx.core:core-ktx:1.12.0'; implementation 'androidx.appcompat:appcompat:1.6.1' }
+          EOF
+
+          cat << 'EOF' > app/src/main/AndroidManifest.xml
+          <?xml version="1.0" encoding="utf-8"?>
+          <manifest xmlns:android="http://schemas.android.com/apk/res/android" xmlns:tools="http://schemas.android.com/tools">
+              <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
+              <uses-permission android:name="android.permission.WRITE_SETTINGS" tools:ignore="ProtectedPermissions" />
+              <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
+              <application android:allowBackup="true" android:icon="@android:drawable/sym_def_app_icon" android:label="@string/app_name" android:supportsRtl="true" android:theme="@style/Theme.TechAssist">
+                  <activity android:name=".MainActivity" android:exported="true">
+                      <intent-filter><action android:name="android.intent.action.MAIN" /><category android:name="android.intent.category.LAUNCHER" /></intent-filter>
+                  </activity>
+                  <service android:name=".AssistService" android:exported="false" />
+              </application>
+          </manifest>
+          EOF
+
+          cat << 'EOF' > app/src/main/java/com/example/techassist/MainActivity.kt
+          package com.example.techassist
+          import android.content.Intent; import android.net.Uri; import android.os.Bundle; import android.provider.Settings; import android.view.MotionEvent; import android.view.View; import android.widget.Button; import android.widget.Toast
+          import androidx.activity.result.contract.ActivityResultContracts; import androidx.appcompat.app.AppCompatActivity
+
+          class MainActivity : AppCompatActivity() {
+              private lateinit var btnStart: Button; private lateinit var btnExit: Button
+              private val overlayPermLauncher = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { if (Settings.canDrawOverlays(this)) requestWriteSettingsOrStart() else toast("未授予悬浮窗权限") }
+              private val writeSettingsLauncher = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { if (Settings.System.canWrite(this)) startAssistService() else { toast("未授予修改系统设置权限"); startAssistService() } }
+              override fun onCreate(savedInstanceState: Bundle?) {
+                  super.onCreate(savedInstanceState); setContentView(R.layout.activity_main)
+                  btnStart = findViewById(R.id.btnStart); btnExit = findViewById(R.id.btnExit)
+                  btnStart.applyPressEffect(); btnExit.applyPressEffect()
+                  btnStart.setOnClickListener { onStartClicked() }
+                  btnExit.setOnClickListener { stopService(Intent(this, AssistService::class.java)); finishAffinity() }
+              }
+              private fun onStartClicked() { if (!Settings.canDrawOverlays(this)) overlayPermLauncher.launch(Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:$packageName"))) else requestWriteSettingsOrStart() }
+              private fun requestWriteSettingsOrStart() { if (Settings.System.canWrite(this)) startAssistService() else try { writeSettingsLauncher.launch(Intent(Settings.ACTION_MANAGE_WRITE_SETTINGS, Uri.parse("package:$packageName"))) } catch (e: Exception) { startAssistService() } }
+              private fun startAssistService() { startService(Intent(this, AssistService::class.java)); toast("辅助已启动"); moveTaskToBack(true) }
+              private fun toast(msg: String) = Toast.makeText(this, msg, Toast.LENGTH_SHORT).show()
+              private fun View.applyPressEffect() { setOnTouchListener { v, event -> when (event.action) { MotionEvent.ACTION_DOWN -> v.animate().scaleX(0.97f).scaleY(0.97f).setDuration(90).start(); MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> v.animate().scaleX(1f).scaleY(1f).setDuration(140).start() }; false } }
+          }
+          EOF
+
+          cat << 'EOF' > app/src/main/java/com/example/techassist/AssistService.kt
+          package com.example.techassist
+          import android.app.Service; import android.content.Intent; import android.graphics.PixelFormat; import android.media.AudioManager; import android.os.Build; import android.os.IBinder; import android.provider.Settings; import android.view.Gravity; import android.view.LayoutInflater; import android.view.MotionEvent; import android.view.View; import android.view.WindowManager; import android.widget.SeekBar; import android.widget.TextView; import kotlin.math.roundToInt
+
+          class AssistService : Service() {
+              private lateinit var windowManager: WindowManager; private lateinit var audioManager: AudioManager; private lateinit var panel: View; private lateinit var params: WindowManager.LayoutParams
+              private lateinit var tvBrightness: TextView; private lateinit var tvVolume: TextView; private lateinit var sbBrightness: SeekBar; private lateinit var sbVolume: SeekBar
+              override fun onBind(intent: Intent?): IBinder? = null
+              override fun onCreate() {
+                  super.onCreate(); windowManager = getSystemService(WINDOW_SERVICE) as WindowManager; audioManager = getSystemService(AUDIO_SERVICE) as AudioManager; buildPanel()
+              }
+              override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int = START_STICKY
+              private fun buildPanel() {
+                  panel = LayoutInflater.from(this).inflate(R.layout.window_assist, null)
+                  val type = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY else @Suppress("DEPRECATION") WindowManager.LayoutParams.TYPE_PHONE
+                  params = WindowManager.LayoutParams(WindowManager.LayoutParams.WRAP_CONTENT, WindowManager.LayoutParams.WRAP_CONTENT, type, WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN, PixelFormat.TRANSLUCENT).apply { gravity = Gravity.TOP or Gravity.START; x = dp(16); y = dp(120) }
+                  windowManager.addView(panel, params)
+                  tvBrightness = panel.findViewById(R.id.tvBrightnessValue); tvVolume = panel.findViewById(R.id.tvVolumeValue); sbBrightness = panel.findViewById(R.id.sbBrightness); sbVolume = panel.findViewById(R.id.sbVolume)
+                  setupDrag(panel.findViewById(R.id.dragHandle)); setupBrightness(); setupVolume()
+                  panel.findViewById<View>(R.id.btnClose).setOnClickListener { stopSelf() }
+              }
+              private fun setupDrag(handle: View) {
+                  var startX = 0; var startY = 0; var downX = 0f; var downY = 0f
+                  handle.setOnTouchListener { _, event -> when (event.action) {
+                      MotionEvent.ACTION_DOWN -> { startX = params.x; startY = params.y; downX = event.rawX; downY = event.rawY; true }
+                      MotionEvent.ACTION_MOVE -> { params.x = startX + (event.rawX - downX).toInt(); params.y = startY + (event.rawY - downY).toInt(); windowManager.updateViewLayout(panel, params); true }
+                      else -> false
+                  } }
+              }
+              private fun setupBrightness() {
+                  val current = currentBrightnessPercent(); sbBrightness.max = 100; sbBrightness.progress = current; tvBrightness.text = "$current%"
+                  sbBrightness.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
+                      override fun onProgressChanged(seekBar: SeekBar?, progress: Int, fromUser: Boolean) { tvBrightness.text = "$progress%"; if (fromUser) applyBrightness(progress) }
+                      override fun onStartTrackingTouch(seekBar: SeekBar?) {}; override fun onStopTrackingTouch(seekBar: SeekBar?) {}
+                  })
+              }
+              private fun applyBrightness(percent: Int) {
+                  val value = (percent.coerceIn(1, 100) * 255f / 100f).roundToInt().coerceIn(1, 255)
+                  try { Settings.System.putInt(contentResolver, Settings.System.SCREEN_BRIGHTNESS_MODE, Settings.System.SCREEN_BRIGHTNESS_MODE_MANUAL); Settings.System.putInt(contentResolver, Settings.System.SCREEN_BRIGHTNESS, value) } catch (e: Exception) {}
+              }
+              private fun currentBrightnessPercent(): Int { val v = Settings.System.getInt(contentResolver, Settings.System.SCREEN_BRIGHTNESS, 128); return (v * 100f / 255f).roundToInt().coerceIn(1, 100) }
+              private fun setupVolume() {
+                  val current = currentVolumePercent(); sbVolume.max = 100; sbVolume.progress = current; tvVolume.text = "$current%"
+                  sbVolume.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
+                      override fun onProgressChanged(seekBar: SeekBar?, progress: Int, fromUser: Boolean) { tvVolume.text = "$progress%"; if (fromUser) applyVolume(progress) }
+                      override fun onStartTrackingTouch(seekBar: SeekBar?) {}; override fun onStopTrackingTouch(seekBar: SeekBar?) {}
+                  })
+              }
+              private fun applyVolume(percent: Int) { try { val max = audioManager.getStreamMaxVolume(AudioManager.STREAM_MUSIC); val index = (percent.coerceIn(0, 100) / 100f * max).roundToInt().coerceIn(0, max); audioManager.setStreamVolume(AudioManager.STREAM_MUSIC, index, 0) } catch (e: Exception) {} }
+              private fun currentVolumePercent(): Int { val max = audioManager.getStreamMaxVolume(AudioManager.STREAM_MUSIC); if (max <= 0) return 50; val cur = audioManager.getStreamVolume(AudioManager.STREAM_MUSIC); return (cur * 100f / max).roundToInt().coerceIn(0, 100) }
+              private fun dp(v: Int): Int = (v * resources.displayMetrics.density).roundToInt()
+              override fun onDestroy() { super.onDestroy(); try { if (::panel.isInitialized) windowManager.removeView(panel) } catch (_: Exception) {} }
+          }
+          EOF
+
+          cat << 'EOF' > app/src/main/res/layout/activity_main.xml
+          <?xml version="1.0" encoding="utf-8"?>
+          <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android" android:layout_width="match_parent" android:layout_height="match_parent" android:background="#FFFFFFFF" android:gravity="center" android:orientation="vertical" android:paddingStart="40dp" android:paddingEnd="40dp">
+              <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:letterSpacing="0.3" android:text="TECH ASSIST" android:textColor="#0F172A" android:textSize="26sp" android:textStyle="bold" />
+              <View android:layout_width="90dp" android:layout_height="2dp" android:layout_marginTop="14dp" android:background="@drawable/line_gradient" />
+              <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:layout_marginTop="12dp" android:letterSpacing="0.08" android:text="智能悬浮控制 · 亮度 / 音量" android:textColor="#94A3B8" android:textSize="13sp" />
+              <Button android:id="@+id/btnStart" android:layout_width="match_parent" android:layout_height="56dp" android:layout_marginTop="60dp" android:background="@drawable/bg_btn_primary" android:letterSpacing="0.2" android:stateListAnimator="@null" android:text="启 动 辅 助" android:textColor="#FFFFFF" android:textSize="16sp" />
+              <Button android:id="@+id/btnExit" android:layout_width="match_parent" android:layout_height="56dp" android:layout_marginTop="18dp" android:background="@drawable/bg_btn_exit" android:letterSpacing="0.2" android:stateListAnimator="@null" android:text="退 出 软 件" android:textColor="#0EA5E9" android:textSize="16sp" />
+          </LinearLayout>
+          EOF
+
+          cat << 'EOF' > app/src/main/res/layout/window_assist.xml
+          <?xml version="1.0" encoding="utf-8"?>
+          <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android" android:layout_width="290dp" android:layout_height="wrap_content" android:background="@drawable/bg_panel" android:orientation="vertical" android:paddingStart="16dp" android:paddingTop="14dp" android:paddingEnd="16dp" android:paddingBottom="16dp">
+              <LinearLayout android:id="@+id/dragHandle" android:layout_width="match_parent" android:layout_height="wrap_content" android:gravity="center_vertical" android:orientation="horizontal">
+                  <View android:layout_width="8dp" android:layout_height="8dp" android:background="@drawable/dot_cyan" />
+                  <TextView android:layout_width="0dp" android:layout_height="wrap_content" android:layout_marginStart="8dp" android:layout_weight="1" android:letterSpacing="0.15" android:text="ASSIST CONSOLE" android:textColor="#D6F6FF" android:textSize="13sp" android:textStyle="bold" />
+                  <TextView android:id="@+id/btnClose" android:layout_width="wrap_content" android:layout_height="wrap_content" android:paddingStart="12dp" android:paddingTop="4dp" android:paddingEnd="2dp" android:paddingBottom="4dp" android:text="✕" android:textColor="#67E8F9" android:textSize="15sp" />
+              </LinearLayout>
+              <View android:layout_width="match_parent" android:layout_height="1dp" android:layout_marginTop="10dp" android:background="@drawable/line_divider" />
+              <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="14dp" android:gravity="center_vertical" android:orientation="horizontal">
+                  <TextView android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:letterSpacing="0.1" android:text="屏幕亮度" android:textColor="#9FD8EA" android:textSize="13sp" />
+                  <TextView android:id="@+id/tvBrightnessValue" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="50%" android:textColor="#22D3EE" android:textSize="13sp" android:textStyle="bold" />
+              </LinearLayout>
+              <SeekBar android:id="@+id/sbBrightness" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="2dp" android:max="100" android:progressBackgroundTint="#1E3A4C" android:progressTint="#22D3EE" android:thumbTint="#7DF9FF" />
+              <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="10dp" android:gravity="center_vertical" android:orientation="horizontal">
+                  <TextView android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:letterSpacing="0.1" android:text="媒体音量" android:textColor="#9FD8EA" android:textSize="13sp" />
+                  <TextView android:id="@+id/tvVolumeValue" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="50%" android:textColor="#22D3EE" android:textSize="13sp" android:textStyle="bold" />
+              </LinearLayout>
+              <SeekBar android:id="@+id/sbVolume" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="2dp" android:max="100" android:progressBackgroundTint="#1E3A4C" android:progressTint="#22D3EE" android:thumbTint="#7DF9FF" />
+          </LinearLayout>
+          EOF
+
+          # 简单的 Drawable 和 Values 文件（省略详细内容，使用最精简的写法确保不出错）
+          echo '<?xml version="1.0" encoding="utf-8"?><ripple xmlns:android="http://schemas.android.com/apk/res/android" android:color="#40FFFFFF"><item><shape android:shape="rectangle"><corners android:radius="16dp" /><gradient android:angle="0" android:endColor="#22D3EE" android:startColor="#0891B2" /><stroke android:width="1dp" android:color="#A5F3FC" /></shape></item></ripple>' > app/src/main/res/drawable/bg_btn_primary.xml
+          echo '<?xml version="1.0" encoding="utf-8"?><ripple xmlns:android="http://schemas.android.com/apk/res/android" android:color="#2222D3EE"><item><shape android:shape="rectangle"><corners android:radius="16dp" /><solid android:color="#FFFFFF" /><stroke android:width="1.5dp" android:color="#0EA5E9" /></shape></item></ripple>' > app/src/main/res/drawable/bg_btn_exit.xml
+          echo '<?xml version="1.0" encoding="utf-8"?><shape xmlns:android="http://schemas.android.com/apk/res/android" android:shape="rectangle"><corners android:radius="18dp" /><gradient android:angle="270" android:endColor="#E60C2438" android:startColor="#E60A1526" /><stroke android:width="1dp" android:color="#6622D3EE" /></shape>' > app/src/main/res/drawable/bg_panel.xml
+          echo '<?xml version="1.0" encoding="utf-8"?><shape xmlns:android="http://schemas.android.com/apk/res/android" android:shape="oval"><solid android:color="#22D3EE" /><size android:width="8dp" android:height="8dp" /></shape>' > app/src/main/res/drawable/dot_cyan.xml
+          echo '<?xml version="1.0" encoding="utf-8"?><shape xmlns:android="http://schemas.android.com/apk/res/android" android:shape="rectangle"><gradient android:angle="0" android:centerColor="#FF22D3EE" android:endColor="#0022D3EE" android:startColor="#0022D3EE" /></shape>' > app/src/main/res/drawable/line_gradient.xml
+          echo '<?xml version="1.0" encoding="utf-8"?><shape xmlns:android="http://schemas.android.com/apk/res/android" android:shape="rectangle"><gradient android:angle="0" android:centerColor="#8822D3EE" android:endColor="#0022D3EE" android:startColor="#0022D3EE" /></shape>' > app/src/main/res/drawable/line_divider.xml
+          echo '<?xml version="1.0" encoding="utf-8"?><resources><style name="Theme.TechAssist" parent="Theme.AppCompat.Light.NoActionBar"><item name="android:windowBackground">@android:color/white</item><item name="android:statusBarColor">@android:color/white</item><item name="android:navigationBarColor">@android:color/white</item></style></resources>' > app/src/main/res/values/themes.xml
+          echo '<?xml version="1.0" encoding="utf-8"?><resources><string name="app_name">科技辅助</string></resources>' > app/src/main/res/values/strings.xml
+
+      - name: Build Debug APK
+        run: gradle assembleDebug --no-daemon
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: TechAssist-APK
-          path: extracted/**/app/build/outputs/apk/debug/app-debug.apk
+          name: TechAssist-Native-APK
+          path: app/build/outputs/apk/debug/app-debug.apk
