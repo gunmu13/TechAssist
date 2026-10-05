@@ -52,7 +52,7 @@ jobs:
           android {
               namespace 'com.example.techassist'
               compileSdk 34
-              defaultConfig { applicationId "com.example.techassist"; minSdk 24; targetSdk 34; versionCode 8; versionName "8.0" }
+              defaultConfig { applicationId "com.example.techassist"; minSdk 24; targetSdk 34; versionCode 20; versionName "20.0" }
               buildTypes { release { minifyEnabled false } }
               compileOptions { sourceCompatibility JavaVersion.VERSION_17; targetCompatibility JavaVersion.VERSION_17 }
               kotlinOptions { jvmTarget = '17' }
@@ -68,11 +68,22 @@ jobs:
               <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
               <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
               <uses-permission android:name="android.permission.POST_NOTIFICATIONS" tools:ignore="ProtectedPermissions" />
+              <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PROJECTION" />
+              <uses-permission android:name="android.permission.RECORD_AUDIO" />
+              <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" android:maxSdkVersion="28" />
+              <uses-permission android:name="android.permission.FLASHLIGHT" />
+              <uses-permission android:name="android.permission.CAMERA" />
+              <uses-permission android:name="android.permission.WAKE_LOCK" />
+              <uses-permission android:name="android.permission.REORDER_TASKS" />
+              <uses-permission android:name="android.permission.KILL_BACKGROUND_PROCESSES" tools:ignore="ProtectedPermissions" />
+              <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
+              <uses-permission android:name="android.permission.BLUETOOTH" android:maxSdkVersion="30" />
+              <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" tools:ignore="ProtectedPermissions" />
               <application android:allowBackup="true" android:icon="@android:drawable/sym_def_app_icon" android:label="@string/app_name" android:supportsRtl="true" android:theme="@style/Theme.TechAssist">
                   <activity android:name=".MainActivity" android:exported="true">
                       <intent-filter><action android:name="android.intent.action.MAIN" /><category android:name="android.intent.category.LAUNCHER" /></intent-filter>
                   </activity>
-                  <service android:name=".AssistService" android:exported="false" android:foregroundServiceType="specialUse" />
+                  <service android:name=".AssistService" android:exported="false" android:foregroundServiceType="specialUse|mediaProjection" />
               </application>
           </manifest>
           EOF
@@ -86,7 +97,6 @@ jobs:
               private lateinit var btnStart: Button; private lateinit var btnExit: Button
               private val overlayPermLauncher = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { if (Settings.canDrawOverlays(this)) requestWriteSettingsOrStart() else toast("未授予悬浮窗权限") }
               private val writeSettingsLauncher = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { startAssistService() }
-
               override fun onCreate(savedInstanceState: Bundle?) {
                   super.onCreate(savedInstanceState); setContentView(R.layout.activity_main)
                   btnStart = findViewById(R.id.btnStart); btnExit = findViewById(R.id.btnExit)
@@ -100,14 +110,12 @@ jobs:
                   } else { requestWriteSettingsOrStart() }
               }
               private fun requestWriteSettingsOrStart() {
-                  try {
-                      if (!Settings.System.canWrite(this)) writeSettingsLauncher.launch(Intent(Settings.ACTION_MANAGE_WRITE_SETTINGS, Uri.parse("package:$packageName"))) else startAssistService()
-                  } catch (e: Exception) { startAssistService() }
+                  try { if (!Settings.System.canWrite(this)) writeSettingsLauncher.launch(Intent(Settings.ACTION_MANAGE_WRITE_SETTINGS, Uri.parse("package:$packageName"))) else startAssistService() } catch (e: Exception) { startAssistService() }
               }
               private fun startAssistService() {
                   val intent = Intent(this, AssistService::class.java)
                   if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) startForegroundService(intent) else startService(intent)
-                  toast("辅助已启动，拖动右下角缩放"); moveTaskToBack(true)
+                  toast("辅助已启动"); moveTaskToBack(true)
               }
               private fun toast(msg: String) = Toast.makeText(this, msg, Toast.LENGTH_SHORT).show()
               private fun View.applyPressEffect() { setOnTouchListener { v, event -> when (event.action) { MotionEvent.ACTION_DOWN -> v.animate().scaleX(0.97f).scaleY(0.97f).setDuration(90).start(); MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> v.animate().scaleX(1f).scaleY(1f).setDuration(140).start() }; false } }
@@ -116,32 +124,51 @@ jobs:
 
           cat << 'EOF' > app/src/main/java/com/example/techassist/AssistService.kt
           package com.example.techassist
-          import android.app.Notification; import android.app.NotificationChannel; import android.app.NotificationManager; import android.app.Service
-          import android.content.Intent; import android.content.res.Configuration; import android.graphics.PixelFormat; import android.media.AudioManager; import android.media.ToneGenerator
-          import android.os.Build; import android.os.Handler; import android.os.IBinder; import android.os.Looper; import android.provider.Settings
-          import android.view.Gravity; import android.view.LayoutInflater; import android.view.MotionEvent; import android.view.View; import android.view.WindowManager
-          import android.widget.SeekBar; import android.widget.TextView; import android.widget.Button; import android.widget.Switch; import android.widget.LinearLayout; import android.widget.Toast
-          import kotlin.math.roundToInt
+          import android.app.*; import android.content.ClipData; import android.content.ClipboardManager; import android.content.ContentValues
+          import android.content.Context; import android.content.Intent; import android.content.pm.ActivityInfo
+          import android.content.res.Configuration; import android.graphics.Bitmap; import android.graphics.Color; import android.graphics.PixelFormat
+          import android.hardware.camera2.CameraManager; import android.hardware.display.DisplayManager
+          import android.hardware.display.VirtualDisplay; import android.media.AudioManager; import android.media.ImageReader
+          import android.media.projection.MediaProjection; import android.media.projection.MediaProjectionManager
+          import android.net.Uri; import android.os.*; import android.provider.MediaStore; import android.provider.Settings
+          import android.view.Gravity; import android.view.LayoutInflater; import android.view.MotionEvent; import android.view.View
+          import android.view.WindowManager; import android.widget.*; import kotlin.math.roundToInt
 
           class AssistService : Service() {
               private lateinit var windowManager: WindowManager; private lateinit var audioManager: AudioManager; private lateinit var panel: View
               private lateinit var params: WindowManager.LayoutParams
               private lateinit var mainPanel: LinearLayout; private lateinit var miniIcon: TextView; private lateinit var sliderContainer: LinearLayout
               private lateinit var tvBrightness: TextView; private lateinit var tvVolume: TextView; private lateinit var sbBrightness: SeekBar; private lateinit var sbVolume: SeekBar
-              private lateinit var btnMute: Button; private lateinit var btnStreamSwitch: Button; private lateinit var switchAuto: Switch; private lateinit var btnHide: TextView
-              private lateinit var btnPlayMusic: Button
+              private lateinit var btnMute: Button; private lateinit var btnStreamSwitch: Button; private lateinit var switchAuto: Switch
+              private lateinit var btnScreenshot: Button; private lateinit var btnRecord: Button
+              private lateinit var btnWeChat: Button; private lateinit var btnCamera: Button
+              private lateinit var btnFlashlight: Button; private lateinit var btnKeepScreenOn: Button; private lateinit var btnHome: Button
+              private lateinit var btnNight: Button; private lateinit var btnOrientation: Button; private lateinit var btnWifi: Button; private lateinit var btnBluetooth: Button
+              private lateinit var btnAirplane: Button; private lateinit var btnBattery: Button; private lateinit var btnPerm: Button; private lateinit var btnClipboard: Button
+              private lateinit var colorDots: LinearLayout
               private var currentStream = AudioManager.STREAM_MUSIC; private var isMuted = false
-              private var panelWidthPx = 0; private var isHidden = false; private var currentAlpha = 1.0f
-              private var isPlaying = false
-              private var toneGenerator: ToneGenerator? = null
-              private val musicHandler = Handler(Looper.getMainLooper())
-              private var musicRunnable: Runnable? = null
+              private var panelWidthPx = 0; private var currentAlpha = 1.0f
+              private var isRecording = false; private var isFlashlightOn = false; private var isKeepScreenOn = false
+              private var isNightMode = false; private var orientationIndex = 0
+              private var cameraManager: CameraManager? = null; private var cameraId: String? = null
+              private var normalBrightness = 0.6f
+
+              companion object {
+                  var mediaProjectionManager: MediaProjectionManager? = null
+                  var mediaProjection: MediaProjection? = null
+                  var virtualDisplay: VirtualDisplay? = null
+                  const val REQ_CODE_CAPTURE = 1001
+                  const val REQ_CODE_RECORD = 2002
+              }
 
               override fun onBind(intent: Intent?): IBinder? = null
               override fun onCreate() {
                   super.onCreate(); startForegroundNotification()
                   windowManager = getSystemService(WINDOW_SERVICE) as WindowManager
                   audioManager = getSystemService(AUDIO_SERVICE) as AudioManager
+                  mediaProjectionManager = getSystemService(Context.MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
+                  cameraManager = getSystemService(Context.CAMERA_SERVICE) as CameraManager
+                  try { cameraId = cameraManager?.cameraIdList?.firstOrNull() } catch (e: Exception) {}
                   buildPanel()
               }
 
@@ -175,21 +202,45 @@ jobs:
                   tvBrightness = panel.findViewById(R.id.tvBrightnessValue); tvVolume = panel.findViewById(R.id.tvVolumeValue)
                   sbBrightness = panel.findViewById(R.id.sbBrightness); sbVolume = panel.findViewById(R.id.sbVolume)
                   btnMute = panel.findViewById(R.id.btnMute); btnStreamSwitch = panel.findViewById(R.id.btnStreamSwitch); switchAuto = panel.findViewById(R.id.switchAutoBrightness)
-                  btnHide = panel.findViewById(R.id.btnHide)
-                  btnPlayMusic = panel.findViewById(R.id.btnPlayMusic)
+                  btnScreenshot = panel.findViewById(R.id.btnScreenshot); btnRecord = panel.findViewById(R.id.btnRecord)
+                  btnWeChat = panel.findViewById(R.id.btnWeChat); btnCamera = panel.findViewById(R.id.btnCamera)
+                  btnFlashlight = panel.findViewById(R.id.btnFlashlight); btnKeepScreenOn = panel.findViewById(R.id.btnKeepScreenOn); btnHome = panel.findViewById(R.id.btnHome)
+                  btnNight = panel.findViewById(R.id.btnNight); btnOrientation = panel.findViewById(R.id.btnOrientation)
+                  btnWifi = panel.findViewById(R.id.btnWifi); btnBluetooth = panel.findViewById(R.id.btnBluetooth); btnAirplane = panel.findViewById(R.id.btnAirplane)
+                  btnBattery = panel.findViewById(R.id.btnBattery); btnPerm = panel.findViewById(R.id.btnPerm); btnClipboard = panel.findViewById(R.id.btnClipboard)
+                  colorDots = panel.findViewById(R.id.colorDots)
 
                   setupDrag(panel.findViewById(R.id.dragHandle))
-                  setupMiniDrag(miniIcon)   // ⭐ 最小化图标也能拖动
+                  setupMiniDrag(miniIcon)
                   setupResizeHandle(panel.findViewById(R.id.resizeHandle))
-                  setupBrightness(); setupVolume(); setupButtons(); setupAlphaSlider()
+                  setupBrightness(); setupVolume(); setupButtons(); setupAlphaSlider(); setupColorDots()
 
                   panel.findViewById<View>(R.id.btnClose).setOnClickListener { stopSelf() }
                   panel.findViewById<View>(R.id.btnMinimize).setOnClickListener { minimize() }
                   miniIcon.setOnClickListener { restore() }
-                  btnHide.setOnClickListener { toggleHideButtons() }
+                  panel.findViewById<View>(R.id.btnHide).setOnClickListener { toggleHideButtons() }
               }
 
-              // ⭐ 最小化图标可拖动
+              private fun setupColorDots() {
+                  val colors = listOf(
+                      "#22D3EE" to R.drawable.bg_panel,
+                      "#3B82F6" to R.drawable.bg_panel_blue,
+                      "#A855F7" to R.drawable.bg_panel_purple,
+                      "#10B981" to R.drawable.bg_panel_green,
+                      "#EF4444" to R.drawable.bg_panel_red
+                  )
+                  colorDots.removeAllViews()
+                  for ((hex, drawable) in colors) {
+                      val dot = View(this).apply {
+                          layoutParams = LinearLayout.LayoutParams(dp(22), dp(22)).apply { marginEnd = dp(8) }
+                          background = getDrawable(R.drawable.color_dot)
+                          background.setTint(Color.parseColor(hex))
+                          setOnClickListener { mainPanel.setBackgroundResource(drawable); Toast.makeText(this@AssistService, "主题已切换", Toast.LENGTH_SHORT).show() }
+                      }
+                      colorDots.addView(dot)
+                  }
+              }
+
               private fun setupMiniDrag(handle: View) {
                   var startX = 0; var startY = 0; var downX = 0f; var downY = 0f
                   handle.setOnTouchListener { _, event -> when (event.action) {
@@ -217,10 +268,8 @@ jobs:
                   params.width = panelWidthPx; params.height = WindowManager.LayoutParams.WRAP_CONTENT
                   windowManager.updateViewLayout(panel, params)
               }
-
               private fun toggleHideButtons() {
-                  isHidden = !isHidden
-                  sliderContainer.visibility = if (isHidden) View.GONE else View.VISIBLE
+                  sliderContainer.visibility = if (sliderContainer.visibility == View.GONE) View.VISIBLE else View.GONE
               }
 
               private fun setupAlphaSlider() {
@@ -247,55 +296,153 @@ jobs:
                       btnStreamSwitch.text = if (currentStream == AudioManager.STREAM_MUSIC) "🎵 媒体" else "🔔 铃声"
                       updateVolumeSlider()
                   }
-                  // ⭐ 点击放歌按钮
-                  btnPlayMusic.setOnClickListener { toggleMusic() }
+                  btnScreenshot.setOnClickListener { takeScreenshot() }
+                  btnRecord.setOnClickListener { toggleRecord() }
+                  btnWeChat.setOnClickListener { launchApp("com.tencent.mm") }
+                  btnCamera.setOnClickListener { launchApp("com.android.camera") }
+                  btnFlashlight.setOnClickListener { toggleFlashlight() }
+                  btnKeepScreenOn.setOnClickListener { toggleKeepScreenOn() }
+                  btnHome.setOnClickListener { goHome() }
+                  btnNight.setOnClickListener { toggleNightMode() }
+                  btnOrientation.setOnClickListener { cycleOrientation() }
+                  btnWifi.setOnClickListener { openSetting(Settings.ACTION_WIFI_SETTINGS) }
+                  btnBluetooth.setOnClickListener { openSetting(Settings.ACTION_BLUETOOTH_SETTINGS) }
+                  btnAirplane.setOnClickListener { openSetting(Settings.ACTION_AIRPLANE_MODE_SETTINGS) }
+                  btnBattery.setOnClickListener { openSetting(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS) }
+                  btnPerm.setOnClickListener { openSetting(Settings.ACTION_APPLICATION_DETAILS_SETTINGS) }
+                  btnClipboard.setOnClickListener { showClipboard() }
+
                   switchAuto.setOnCheckedChangeListener { _, isChecked ->
                       try { Settings.System.putInt(contentResolver, Settings.System.SCREEN_BRIGHTNESS_MODE, if (isChecked) Settings.System.SCREEN_BRIGHTNESS_MODE_AUTOMATIC else Settings.System.SCREEN_BRIGHTNESS_MODE_MANUAL); sbBrightness.isEnabled = !isChecked } catch (e: Exception) { switchAuto.isChecked = !isChecked }
                   }
                   try { val mode = Settings.System.getInt(contentResolver, Settings.System.SCREEN_BRIGHTNESS_MODE); switchAuto.isChecked = mode == Settings.System.SCREEN_BRIGHTNESS_MODE_AUTOMATIC; sbBrightness.isEnabled = !switchAuto.isChecked } catch (e: Exception) {}
               }
 
-              // ⭐ 播放《月色真美》旋律（用 ToneGenerator 合成）
-              private fun toggleMusic() {
-                  if (isPlaying) {
-                      stopMusic(); btnPlayMusic.text = "🎵 放歌"; isPlaying = false; return
-                  }
-                  isPlaying = true; btnPlayMusic.text = "⏸ 暂停"
-                  // 《月色真美》主旋律（音高对应频率）
-                  // 音符序列: D5 E5 F#5 A5 F#5 E5 D5 B4 D5 E5 F#5 A5 B5 A5 F#5 E5
-                  val notes = intArrayOf(
-                      587, 659, 740, 880, 740, 659, 587, 494,
-                      587, 659, 740, 880, 988, 880, 740, 659,
-                      587, 659, 740, 880, 740, 659, 587, 494,
-                      494, 587, 659, 587, 494, 440, 494, 587
-                  )
-                  val durations = longArrayOf(
-                      400, 400, 400, 600, 400, 400, 600, 600,
-                      400, 400, 400, 600, 600, 400, 400, 400,
-                      400, 400, 400, 600, 400, 400, 600, 600,
-                      400, 400, 400, 400, 600, 400, 400, 800
-                  )
-                  if (toneGenerator == null) toneGenerator = ToneGenerator(AudioManager.STREAM_MUSIC, 80)
-                  var index = 0
-                  musicRunnable = object : Runnable {
-                      override fun run() {
-                          if (!isPlaying) return
-                          try {
-                              toneGenerator?.startTone(notes[index], 200)
-                          } catch (e: Exception) {}
-                          val delay = durations[index]
-                          index = (index + 1) % notes.size
-                          musicHandler.postDelayed(this, delay)
-                      }
-                  }
-                  musicHandler.post(musicRunnable!!)
+              private fun toggleFlashlight() {
+                  try {
+                      val id = cameraId ?: run { Toast.makeText(this, "本机无闪光灯", Toast.LENGTH_SHORT).show(); return }
+                      isFlashlightOn = !isFlashlightOn
+                      cameraManager?.setTorchMode(id, isFlashlightOn)
+                      btnFlashlight.text = if (isFlashlightOn) "🔆 关灯" else "🔦 手电"
+                  } catch (e: Exception) { Toast.makeText(this, "手电筒失败: ${e.message}", Toast.LENGTH_SHORT).show() }
               }
 
-              private fun stopMusic() {
-                  musicRunnable?.let { musicHandler.removeCallbacks(it) }
-                  toneGenerator?.stopTone()
-                  toneGenerator?.release()
-                  toneGenerator = null
+              private fun toggleKeepScreenOn() {
+                  isKeepScreenOn = !isKeepScreenOn
+                  panel.keepScreenOn = isKeepScreenOn
+                  mainPanel.keepScreenOn = isKeepScreenOn
+                  btnKeepScreenOn.text = if (isKeepScreenOn) "🔒 常亮开" else "🔓 常亮"
+                  Toast.makeText(this, if (isKeepScreenOn) "屏幕常亮已开启" else "已关闭", Toast.LENGTH_SHORT).show()
+              }
+
+              private fun goHome() {
+                  try {
+                      val intent = Intent(Intent.ACTION_MAIN).apply { addCategory(Intent.CATEGORY_HOME); flags = Intent.FLAG_ACTIVITY_NEW_TASK }
+                      startActivity(intent)
+                  } catch (e: Exception) { Toast.makeText(this, "回桌面失败", Toast.LENGTH_SHORT).show() }
+              }
+
+              private fun toggleNightMode() {
+                  isNightMode = !isNightMode
+                  if (isNightMode) {
+                      normalBrightness = params.screenBrightness
+                      params.screenBrightness = 0.2f
+                      btnNight.text = "🌙 夜间开"
+                  } else {
+                      params.screenBrightness = if (normalBrightness in 0f..1f) normalBrightness else 0.6f
+                      btnNight.text = "☀️ 日间"
+                  }
+                  try { windowManager.updateViewLayout(panel, params) } catch (e: Exception) {}
+                  Toast.makeText(this, if (isNightMode) "夜间模式已开启" else "夜间模式已关闭", Toast.LENGTH_SHORT).show()
+              }
+
+              private fun cycleOrientation() {
+                  orientationIndex = (orientationIndex + 1) % 3
+                  btnOrientation.text = when (orientationIndex) { 0 -> "🔄 自动" 1 -> "📱 竖屏" else -> "📺 横屏" }
+                  Toast.makeText(this, "方向切换需系统设置配合（本按钮循环提示）", Toast.LENGTH_SHORT).show()
+              }
+
+              private fun openSetting(action: String) {
+                  try {
+                      val intent = if (action == Settings.ACTION_APPLICATION_DETAILS_SETTINGS) Intent(action, Uri.parse("package:$packageName")) else Intent(action)
+                      intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                      startActivity(intent)
+                  } catch (e: Exception) { Toast.makeText(this, "跳转失败", Toast.LENGTH_SHORT).show() }
+              }
+
+              private fun showClipboard() {
+                  try {
+                      val cm = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                      val clip: ClipData? = cm.primaryClip
+                      val text = clip?.getItemAt(0)?.text?.toString() ?: "剪贴板为空"
+                      AlertDialog.Builder(this, android.R.style.Theme_DeviceDefault_Dialog_Alert).setTitle("剪贴板内容").setMessage(text).setPositiveButton("确定", null).show()
+                  } catch (e: Exception) { Toast.makeText(this, "读取失败", Toast.LENGTH_SHORT).show() }
+              }
+
+              private fun takeScreenshot() {
+                  try { val mgr = mediaProjectionManager ?: return; startActivityForResult(mgr.createScreenCaptureIntent(), REQ_CODE_CAPTURE) }
+                  catch (e: Exception) { Toast.makeText(this, "截图失败", Toast.LENGTH_SHORT).show() }
+              }
+
+              private fun handleScreenshot(resultCode: Int, data: Intent?) {
+                  try {
+                      val mgr = mediaProjectionManager ?: return
+                      val projection = mgr.getMediaProjection(resultCode, data!!)
+                      val metrics = resources.displayMetrics
+                      val w = metrics.widthPixels; val h = metrics.heightPixels; val dpi = metrics.densityDpi
+                      val reader = ImageReader.newInstance(w, h, PixelFormat.RGBA_8888, 2)
+                      val vd = projection.createVirtualDisplay("Screenshot", w, h, dpi, DisplayManager.VIRTUAL_DISPLAY_FLAG_AUTO_MIRROR, reader.surface, null, null)
+                      Handler(Looper.getMainLooper()).postDelayed({
+                          try {
+                              val image = reader.acquireLatestImage()
+                              if (image != null) {
+                                  val planes = image.planes; val buffer = planes[0].buffer; val pixelStride = planes[0].pixelStride; val rowStride = planes[0].rowStride
+                                  val rowPadding = rowStride - pixelStride * w
+                                  val bmp = Bitmap.createBitmap(w + rowPadding / pixelStride, h, Bitmap.Config.ARGB_8888)
+                                  bmp.copyPixelsFromBuffer(buffer); image.close()
+                                  saveBitmap(bmp); Toast.makeText(this, "截图已保存", Toast.LENGTH_SHORT).show()
+                              }
+                              reader.close(); vd.release(); projection.stop()
+                          } catch (e: Exception) { Toast.makeText(this, "截图失败: ${e.message}", Toast.LENGTH_SHORT).show() }
+                      }, 800)
+                  } catch (e: Exception) { Toast.makeText(this, "截图失败", Toast.LENGTH_SHORT).show() }
+              }
+
+              private fun saveBitmap(bmp: Bitmap) {
+                  val name = "TechAssist_${System.currentTimeMillis()}.png"
+                  val values = ContentValues().apply { put(MediaStore.Images.Media.DISPLAY_NAME, name); put(MediaStore.Images.Media.MIME_TYPE, "image/png"); put(MediaStore.Images.Media.RELATIVE_PATH, "Pictures/TechAssist") }
+                  val uri = contentResolver.insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, values) ?: return
+                  contentResolver.openOutputStream(uri)?.use { bmp.compress(Bitmap.CompressFormat.PNG, 100, it) }
+              }
+
+              private fun toggleRecord() {
+                  if (isRecording) {
+                      try { virtualDisplay?.release(); mediaProjection?.stop() } catch (e: Exception) {}
+                      isRecording = false; btnRecord.text = "⏺ 录屏"
+                  } else {
+                      try { val mgr = mediaProjectionManager ?: return; startActivityForResult(mgr.createScreenCaptureIntent(), REQ_CODE_RECORD) }
+                      catch (e: Exception) { Toast.makeText(this, "需要录屏权限", Toast.LENGTH_SHORT).show() }
+                  }
+              }
+
+              private fun startRecording(resultCode: Int, data: Intent?) {
+                  try {
+                      val mgr = mediaProjectionManager ?: return
+                      mediaProjection = mgr.getMediaProjection(resultCode, data!!)
+                      val metrics = resources.displayMetrics
+                      val w = metrics.widthPixels; val h = metrics.heightPixels; val dpi = metrics.densityDpi
+                      val reader = ImageReader.newInstance(w, h, PixelFormat.RGBA_8888, 2)
+                      virtualDisplay = mediaProjection!!.createVirtualDisplay("Recorder", w, h, dpi, DisplayManager.VIRTUAL_DISPLAY_FLAG_AUTO_MIRROR, reader.surface, null, null)
+                      isRecording = true; btnRecord.text = "⏹ 停止"
+                  } catch (e: Exception) { Toast.makeText(this, "录屏失败", Toast.LENGTH_SHORT).show() }
+              }
+
+              private fun launchApp(pkg: String) {
+                  try {
+                      val intent = packageManager.getLaunchIntentForPackage(pkg)
+                      if (intent != null) { intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK); startActivity(intent) }
+                      else Toast.makeText(this, "未安装该应用", Toast.LENGTH_SHORT).show()
+                  } catch (e: Exception) { Toast.makeText(this, "启动失败", Toast.LENGTH_SHORT).show() }
               }
 
               private fun updateVolumeSlider() {
@@ -370,13 +517,28 @@ jobs:
                   } catch (e: Exception) { Toast.makeText(this, "当前机型暂不支持音量调节", Toast.LENGTH_SHORT).show() }
               }
 
+              @Deprecated("Deprecated in Java")
+              override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+                  super.onActivityResult(requestCode, resultCode, data)
+                  if (resultCode != Activity.RESULT_OK) return
+                  when (requestCode) {
+                      REQ_CODE_CAPTURE -> handleScreenshot(resultCode, data)
+                      REQ_CODE_RECORD -> startRecording(resultCode, data)
+                  }
+              }
+
               override fun onConfigurationChanged(newConfig: Configuration) {
                   super.onConfigurationChanged(newConfig)
                   if (::panel.isInitialized) { val screenWidth = resources.displayMetrics.widthPixels; if (panelWidthPx > screenWidth - dp(16)) { panelWidthPx = screenWidth - dp(16); params.width = panelWidthPx; windowManager.updateViewLayout(panel, params) } }
               }
 
               private fun dp(v: Int): Int = (v * resources.displayMetrics.density).roundToInt()
-              override fun onDestroy() { super.onDestroy(); stopMusic(); try { if (::panel.isInitialized) windowManager.removeView(panel) } catch (_: Exception) {} }
+              override fun onDestroy() {
+                  super.onDestroy()
+                  try { virtualDisplay?.release(); mediaProjection?.stop() } catch (_: Exception) {}
+                  try { cameraManager?.setTorchMode(cameraId ?: "", false) } catch (_: Exception) {}
+                  try { if (::panel.isInitialized) windowManager.removeView(panel) } catch (_: Exception) {}
+              }
           }
           EOF
 
@@ -385,7 +547,7 @@ jobs:
           <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android" android:layout_width="match_parent" android:layout_height="match_parent" android:background="#FFFFFFFF" android:gravity="center" android:orientation="vertical" android:paddingStart="40dp" android:paddingEnd="40dp">
               <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:letterSpacing="0.3" android:text="TECH ASSIST" android:textColor="#0F172A" android:textSize="26sp" android:textStyle="bold" />
               <View android:layout_width="90dp" android:layout_height="2dp" android:layout_marginTop="14dp" android:background="@drawable/line_gradient" />
-              <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:layout_marginTop="12dp" android:letterSpacing="0.08" android:text="完全体 · 缩放 / 放歌 / 拖动" android:textColor="#94A3B8" android:textSize="13sp" />
+              <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:layout_marginTop="12dp" android:letterSpacing="0.08" android:text="超级控制台 · 20+ 功能" android:textColor="#94A3B8" android:textSize="13sp" />
               <Button android:id="@+id/btnStart" android:layout_width="match_parent" android:layout_height="56dp" android:layout_marginTop="60dp" android:background="@drawable/bg_btn_primary" android:letterSpacing="0.2" android:stateListAnimator="@null" android:text="启 动 辅 助" android:textColor="#FFFFFF" android:textSize="16sp" />
               <Button android:id="@+id/btnExit" android:layout_width="match_parent" android:layout_height="56dp" android:layout_marginTop="18dp" android:background="@drawable/bg_btn_exit" android:letterSpacing="0.2" android:stateListAnimator="@null" android:text="退 出 软 件" android:textColor="#0EA5E9" android:textSize="16sp" />
           </LinearLayout>
@@ -428,8 +590,37 @@ jobs:
                           <SeekBar android:id="@+id/sbAlpha" android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:max="100" android:progress="100" android:progressBackgroundTint="#1E3A4C" android:progressTint="#22D3EE" android:thumbTint="#7DF9FF" />
                       </LinearLayout>
 
-                      <!-- ⭐ 放歌按钮 -->
-                      <Button android:id="@+id/btnPlayMusic" android:layout_width="match_parent" android:layout_height="44dp" android:layout_marginTop="12dp" android:text="🎵 放歌 · 月色真美" android:textSize="13sp" android:background="@drawable/bg_btn_primary" android:textColor="#FFFFFF" android:stateListAnimator="@null" />
+                      <LinearLayout android:id="@+id/colorDots" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="10dp" android:orientation="horizontal" android:gravity="center_vertical" />
+
+                      <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="10dp" android:gravity="center_vertical" android:orientation="horizontal">
+                          <Button android:id="@+id/btnFlashlight" android:layout_width="0dp" android:layout_height="40dp" android:layout_weight="1" android:layout_marginEnd="6dp" android:text="🔦 手电" android:textSize="11sp" android:background="@drawable/bg_btn_exit" android:textColor="#0EA5E9" android:stateListAnimator="@null" />
+                          <Button android:id="@+id/btnKeepScreenOn" android:layout_width="0dp" android:layout_height="40dp" android:layout_weight="1" android:layout_marginEnd="6dp" android:text="🔓 常亮" android:textSize="11sp" android:background="@drawable/bg_btn_exit" android:textColor="#0EA5E9" android:stateListAnimator="@null" />
+                          <Button android:id="@+id/btnHome" android:layout_width="0dp" android:layout_height="40dp" android:layout_weight="1" android:text="🏠 桌面" android:textSize="11sp" android:background="@drawable/bg_btn_exit" android:textColor="#0EA5E9" android:stateListAnimator="@null" />
+                      </LinearLayout>
+
+                      <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="6dp" android:gravity="center_vertical" android:orientation="horizontal">
+                          <Button android:id="@+id/btnNight" android:layout_width="0dp" android:layout_height="40dp" android:layout_weight="1" android:layout_marginEnd="6dp" android:text="☀️ 日间" android:textSize="11sp" android:background="@drawable/bg_btn_exit" android:textColor="#0EA5E9" android:stateListAnimator="@null" />
+                          <Button android:id="@+id/btnOrientation" android:layout_width="0dp" android:layout_height="40dp" android:layout_weight="1" android:layout_marginEnd="6dp" android:text="🔄 自动" android:textSize="11sp" android:background="@drawable/bg_btn_exit" android:textColor="#0EA5E9" android:stateListAnimator="@null" />
+                          <Button android:id="@+id/btnClipboard" android:layout_width="0dp" android:layout_height="40dp" android:layout_weight="1" android:text="📋 剪贴" android:textSize="11sp" android:background="@drawable/bg_btn_exit" android:textColor="#0EA5E9" android:stateListAnimator="@null" />
+                      </LinearLayout>
+
+                      <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="6dp" android:gravity="center_vertical" android:orientation="horizontal">
+                          <Button android:id="@+id/btnScreenshot" android:layout_width="0dp" android:layout_height="40dp" android:layout_weight="1" android:layout_marginEnd="6dp" android:text="📸 截图" android:textSize="11sp" android:background="@drawable/bg_btn_exit" android:textColor="#0EA5E9" android:stateListAnimator="@null" />
+                          <Button android:id="@+id/btnRecord" android:layout_width="0dp" android:layout_height="40dp" android:layout_weight="1" android:layout_marginEnd="6dp" android:text="⏺ 录屏" android:textSize="11sp" android:background="@drawable/bg_btn_exit" android:textColor="#0EA5E9" android:stateListAnimator="@null" />
+                          <Button android:id="@+id/btnWeChat" android:layout_width="0dp" android:layout_height="40dp" android:layout_weight="1" android:text="💬 微信" android:textSize="11sp" android:background="@drawable/bg_btn_exit" android:textColor="#0EA5E9" android:stateListAnimator="@null" />
+                      </LinearLayout>
+
+                      <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="6dp" android:gravity="center_vertical" android:orientation="horizontal">
+                          <Button android:id="@+id/btnCamera" android:layout_width="0dp" android:layout_height="40dp" android:layout_weight="1" android:layout_marginEnd="6dp" android:text="📷 相机" android:textSize="11sp" android:background="@drawable/bg_btn_exit" android:textColor="#0EA5E9" android:stateListAnimator="@null" />
+                          <Button android:id="@+id/btnWifi" android:layout_width="0dp" android:layout_height="40dp" android:layout_weight="1" android:layout_marginEnd="6dp" android:text="📶 WiFi" android:textSize="11sp" android:background="@drawable/bg_btn_exit" android:textColor="#0EA5E9" android:stateListAnimator="@null" />
+                          <Button android:id="@+id/btnBluetooth" android:layout_width="0dp" android:layout_height="40dp" android:layout_weight="1" android:text="🔵 蓝牙" android:textSize="11sp" android:background="@drawable/bg_btn_exit" android:textColor="#0EA5E9" android:stateListAnimator="@null" />
+                      </LinearLayout>
+
+                      <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="6dp" android:gravity="center_vertical" android:orientation="horizontal">
+                          <Button android:id="@+id/btnAirplane" android:layout_width="0dp" android:layout_height="40dp" android:layout_weight="1" android:layout_marginEnd="6dp" android:text="✈️ 飞行" android:textSize="11sp" android:background="@drawable/bg_btn_exit" android:textColor="#0EA5E9" android:stateListAnimator="@null" />
+                          <Button android:id="@+id/btnBattery" android:layout_width="0dp" android:layout_height="40dp" android:layout_weight="1" android:layout_marginEnd="6dp" android:text="🔋 电池" android:textSize="11sp" android:background="@drawable/bg_btn_exit" android:textColor="#0EA5E9" android:stateListAnimator="@null" />
+                          <Button android:id="@+id/btnPerm" android:layout_width="0dp" android:layout_height="40dp" android:layout_weight="1" android:text="🔐 权限" android:textSize="11sp" android:background="@drawable/bg_btn_exit" android:textColor="#0EA5E9" android:stateListAnimator="@null" />
+                      </LinearLayout>
                   </LinearLayout>
 
                   <View android:id="@+id/resizeHandle" android:layout_width="32dp" android:layout_height="24dp" android:layout_gravity="end" android:layout_marginTop="8dp" android:background="@drawable/bg_resize_handle" />
@@ -441,8 +632,13 @@ jobs:
 
           echo '<?xml version="1.0" encoding="utf-8"?><ripple xmlns:android="http://schemas.android.com/apk/res/android" android:color="#40FFFFFF"><item><shape android:shape="rectangle"><corners android:radius="16dp" /><gradient android:angle="0" android:endColor="#22D3EE" android:startColor="#0891B2" /><stroke android:width="1dp" android:color="#A5F3FC" /></shape></item></ripple>' > app/src/main/res/drawable/bg_btn_primary.xml
           echo '<?xml version="1.0" encoding="utf-8"?><ripple xmlns:android="http://schemas.android.com/apk/res/android" android:color="#2222D3EE"><item><shape android:shape="rectangle"><corners android:radius="16dp" /><solid android:color="#FFFFFF" /><stroke android:width="1.5dp" android:color="#0EA5E9" /></shape></item></ripple>' > app/src/main/res/drawable/bg_btn_exit.xml
-          echo '<?xml version="1.0" encoding="utf-8"?><shape xmlns:android="http://schemas.android.com/apk/res/android" android:shape="rectangle"><corners android:radius="18dp" /><gradient android:angle="270" android:endColor="#E60C2438" android:startColor="#E60A1526" /><stroke android:width="1dp" android:color="#6622D3EE" /></shape>' > app/src/main/res/drawable/bg_panel.xml
+          echo '<?xml version="1.0" encoding="utf-8"?><shape xmlns:android="http://schemas.android.com/apk/res/android" android:shape="rectangle"><corners android:radius="18dp" /><gradient android:angle="270" android:endColor="#F00C2438" android:startColor="#F00A1526" /><stroke android:width="1dp" android:color="#8822D3EE" /></shape>' > app/src/main/res/drawable/bg_panel.xml
+          echo '<?xml version="1.0" encoding="utf-8"?><shape xmlns:android="http://schemas.android.com/apk/res/android" android:shape="rectangle"><corners android:radius="18dp" /><gradient android:angle="270" android:endColor="#F0102980" android:startColor="#F01E3A8A" /><stroke android:width="1dp" android:color="#883B82F6" /></shape>' > app/src/main/res/drawable/bg_panel_blue.xml
+          echo '<?xml version="1.0" encoding="utf-8"?><shape xmlns:android="http://schemas.android.com/apk/res/android" android:shape="rectangle"><corners android:radius="18dp" /><gradient android:angle="270" android:endColor="#F03B076E" android:startColor="#F04C1D95" /><stroke android:width="1dp" android:color="#88A855F7" /></shape>' > app/src/main/res/drawable/bg_panel_purple.xml
+          echo '<?xml version="1.0" encoding="utf-8"?><shape xmlns:android="http://schemas.android.com/apk/res/android" android:shape="rectangle"><corners android:radius="18dp" /><gradient android:angle="270" android:endColor="#F0064E3B" android:startColor="#F0047A50" /><stroke android:width="1dp" android:color="#8810B981" /></shape>' > app/src/main/res/drawable/bg_panel_green.xml
+          echo '<?xml version="1.0" encoding="utf-8"?><shape xmlns:android="http://schemas.android.com/apk/res/android" android:shape="rectangle"><corners android:radius="18dp" /><gradient android:angle="270" android:endColor="#F07F1D1D" android:startColor="#F0991B1B" /><stroke android:width="1dp" android:color="#88EF4444" /></shape>' > app/src/main/res/drawable/bg_panel_red.xml
           echo '<?xml version="1.0" encoding="utf-8"?><shape xmlns:android="http://schemas.android.com/apk/res/android" android:shape="oval"><solid android:color="#22D3EE" /><size android:width="8dp" android:height="8dp" /></shape>' > app/src/main/res/drawable/dot_cyan.xml
+          echo '<?xml version="1.0" encoding="utf-8"?><shape xmlns:android="http://schemas.android.com/apk/res/android" android:shape="oval"><solid android:color="#FFFFFF" /><stroke android:width="2dp" android:color="#33FFFFFF" /><size android:width="22dp" android:height="22dp" /></shape>' > app/src/main/res/drawable/color_dot.xml
           echo '<?xml version="1.0" encoding="utf-8"?><shape xmlns:android="http://schemas.android.com/apk/res/android" android:shape="rectangle"><gradient android:angle="0" android:centerColor="#FF22D3EE" android:endColor="#0022D3EE" android:startColor="#0022D3EE" /></shape>' > app/src/main/res/drawable/line_gradient.xml
           echo '<?xml version="1.0" encoding="utf-8"?><shape xmlns:android="http://schemas.android.com/apk/res/android" android:shape="rectangle"><gradient android:angle="0" android:centerColor="#8822D3EE" android:endColor="#0022D3EE" android:startColor="#0022D3EE" /></shape>' > app/src/main/res/drawable/line_divider.xml
           echo '<?xml version="1.0" encoding="utf-8"?><shape xmlns:android="http://schemas.android.com/apk/res/android" android:shape="rectangle"><corners android:radius="20dp" /><solid android:color="#CC0A1526" /><stroke android:width="1dp" android:color="#6622D3EE" /></shape>' > app/src/main/res/drawable/bg_mini_icon.xml
