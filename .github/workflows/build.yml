@@ -24,14 +24,11 @@ jobs:
 
       - name: Generate Android Project Files
         run: |
-          # 1. 建立完整的目录结构
           mkdir -p app/src/main/java/com/example/techassist
           mkdir -p app/src/main/res/layout
           mkdir -p app/src/main/res/drawable
           mkdir -p app/src/main/res/values
 
-          # 2. 生成所有代码文件（使用 'EOF' 确保特殊符号不被转义）
-          
           cat << 'EOF' > settings.gradle
           pluginManagement { repositories { google(); mavenCentral(); gradlePluginPortal() } }
           dependencyResolutionManagement { repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS); repositories { google(); mavenCentral() } }
@@ -55,7 +52,7 @@ jobs:
           android {
               namespace 'com.example.techassist'
               compileSdk 34
-              defaultConfig { applicationId "com.example.techassist"; minSdk 24; targetSdk 34; versionCode 1; versionName "1.0" }
+              defaultConfig { applicationId "com.example.techassist"; minSdk 24; targetSdk 34; versionCode 4; versionName "4.0" }
               buildTypes { release { minifyEnabled false } }
               compileOptions { sourceCompatibility JavaVersion.VERSION_17; targetCompatibility JavaVersion.VERSION_17 }
               kotlinOptions { jvmTarget = '17' }
@@ -104,25 +101,93 @@ jobs:
 
           cat << 'EOF' > app/src/main/java/com/example/techassist/AssistService.kt
           package com.example.techassist
-          import android.app.Service; import android.content.Intent; import android.graphics.PixelFormat; import android.media.AudioManager; import android.os.Build; import android.os.IBinder; import android.provider.Settings; import android.view.Gravity; import android.view.LayoutInflater; import android.view.MotionEvent; import android.view.View; import android.view.WindowManager; import android.widget.SeekBar; import android.widget.TextView; import kotlin.math.roundToInt
+          import android.app.Service; import android.content.Intent; import android.graphics.PixelFormat; import android.media.AudioManager; import android.os.Build; import android.os.IBinder; import android.provider.Settings; import android.view.Gravity; import android.view.LayoutInflater; import android.view.MotionEvent; import android.view.View; import android.view.WindowManager; import android.widget.SeekBar; import android.widget.TextView; import android.widget.Button; import android.widget.Switch; import android.widget.LinearLayout; import kotlin.math.roundToInt
 
           class AssistService : Service() {
               private lateinit var windowManager: WindowManager; private lateinit var audioManager: AudioManager; private lateinit var panel: View; private lateinit var params: WindowManager.LayoutParams
+              private lateinit var mainPanel: LinearLayout; private lateinit var miniIcon: TextView
               private lateinit var tvBrightness: TextView; private lateinit var tvVolume: TextView; private lateinit var sbBrightness: SeekBar; private lateinit var sbVolume: SeekBar
+              private lateinit var btnMute: Button; private lateinit var btnStreamSwitch: Button; private lateinit var switchAuto: Switch
+              private var currentStream = AudioManager.STREAM_MUSIC; private var isMuted = false
+              private var currentScale = 1.0f
+              private val panelWidthDp = 310
+
               override fun onBind(intent: Intent?): IBinder? = null
               override fun onCreate() {
                   super.onCreate(); windowManager = getSystemService(WINDOW_SERVICE) as WindowManager; audioManager = getSystemService(AUDIO_SERVICE) as AudioManager; buildPanel()
               }
               override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int = START_STICKY
+              
               private fun buildPanel() {
                   panel = LayoutInflater.from(this).inflate(R.layout.window_assist, null)
                   val type = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY else @Suppress("DEPRECATION") WindowManager.LayoutParams.TYPE_PHONE
                   params = WindowManager.LayoutParams(WindowManager.LayoutParams.WRAP_CONTENT, WindowManager.LayoutParams.WRAP_CONTENT, type, WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN, PixelFormat.TRANSLUCENT).apply { gravity = Gravity.TOP or Gravity.START; x = dp(16); y = dp(120) }
                   windowManager.addView(panel, params)
+                  
+                  mainPanel = panel.findViewById(R.id.mainPanel)
+                  miniIcon = panel.findViewById(R.id.miniIcon)
                   tvBrightness = panel.findViewById(R.id.tvBrightnessValue); tvVolume = panel.findViewById(R.id.tvVolumeValue); sbBrightness = panel.findViewById(R.id.sbBrightness); sbVolume = panel.findViewById(R.id.sbVolume)
-                  setupDrag(panel.findViewById(R.id.dragHandle)); setupBrightness(); setupVolume()
+                  btnMute = panel.findViewById(R.id.btnMute); btnStreamSwitch = panel.findViewById(R.id.btnStreamSwitch); switchAuto = panel.findViewById(R.id.switchAutoBrightness)
+                  
+                  setupDrag(panel.findViewById(R.id.dragHandle)); setupBrightness(); setupVolume(); setupButtons()
+                  
                   panel.findViewById<View>(R.id.btnClose).setOnClickListener { stopSelf() }
+                  panel.findViewById<View>(R.id.btnMinimize).setOnClickListener { minimize() }
+                  miniIcon.setOnClickListener { restore() }
+                  
+                  panel.findViewById<View>(R.id.btnZoomIn).setOnClickListener { zoom(0.1f) }
+                  panel.findViewById<View>(R.id.btnZoomOut).setOnClickListener { zoom(-0.1f) }
               }
+              
+              private fun minimize() {
+                  mainPanel.visibility = View.GONE
+                  miniIcon.visibility = View.VISIBLE
+                  params.width = WindowManager.LayoutParams.WRAP_CONTENT
+                  params.height = WindowManager.LayoutParams.WRAP_CONTENT
+                  windowManager.updateViewLayout(panel, params)
+              }
+              
+              private fun restore() {
+                  mainPanel.visibility = View.VISIBLE
+                  miniIcon.visibility = View.GONE
+                  updatePanelSize()
+              }
+              
+              private fun zoom(delta: Float) {
+                  currentScale = (currentScale + delta).coerceIn(0.6f, 1.5f)
+                  updatePanelSize()
+              }
+              
+              private fun updatePanelSize() {
+                  params.width = (dp(panelWidthDp) * currentScale).toInt()
+                  params.height = WindowManager.LayoutParams.WRAP_CONTENT
+                  windowManager.updateViewLayout(panel, params)
+              }
+              
+              private fun setupButtons() {
+                  btnMute.setOnClickListener {
+                      isMuted = !isMuted
+                      audioManager.adjustStreamVolume(currentStream, if (isMuted) AudioManager.ADJUST_MUTE else AudioManager.ADJUST_UNMUTE, AudioManager.FLAG_SHOW_UI)
+                      btnMute.text = if (isMuted) "🔇 已静音" else "🔊 正常"
+                      updateVolumeSlider()
+                  }
+                  btnStreamSwitch.setOnClickListener {
+                      currentStream = if (currentStream == AudioManager.STREAM_MUSIC) AudioManager.STREAM_RING else AudioManager.STREAM_MUSIC
+                      btnStreamSwitch.text = if (currentStream == AudioManager.STREAM_MUSIC) "🎵 媒体" else "🔔 铃声"
+                      updateVolumeSlider()
+                  }
+                  switchAuto.setOnCheckedChangeListener { _, isChecked ->
+                      try { Settings.System.putInt(contentResolver, Settings.System.SCREEN_BRIGHTNESS_MODE, if (isChecked) Settings.System.SCREEN_BRIGHTNESS_MODE_AUTOMATIC else Settings.System.SCREEN_BRIGHTNESS_MODE_MANUAL); sbBrightness.isEnabled = !isChecked } catch (e: Exception) { switchAuto.isChecked = !isChecked }
+                  }
+                  try { val mode = Settings.System.getInt(contentResolver, Settings.System.SCREEN_BRIGHTNESS_MODE); switchAuto.isChecked = mode == Settings.System.SCREEN_BRIGHTNESS_MODE_AUTOMATIC; sbBrightness.isEnabled = !switchAuto.isChecked } catch (e: Exception) {}
+              }
+              
+              private fun updateVolumeSlider() {
+                  val max = audioManager.getStreamMaxVolume(currentStream); val cur = audioManager.getStreamVolume(currentStream)
+                  val percent = if (max <= 0) 50 else (cur * 100f / max).roundToInt()
+                  sbVolume.progress = percent; tvVolume.text = "$percent%"
+              }
+              
               private fun setupDrag(handle: View) {
                   var startX = 0; var startY = 0; var downX = 0f; var downY = 0f
                   handle.setOnTouchListener { _, event -> when (event.action) {
@@ -131,6 +196,7 @@ jobs:
                       else -> false
                   } }
               }
+              
               private fun setupBrightness() {
                   val current = currentBrightnessPercent(); sbBrightness.max = 100; sbBrightness.progress = current; tvBrightness.text = "$current%"
                   sbBrightness.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
@@ -138,20 +204,38 @@ jobs:
                       override fun onStartTrackingTouch(seekBar: SeekBar?) {}; override fun onStopTrackingTouch(seekBar: SeekBar?) {}
                   })
               }
+              
               private fun applyBrightness(percent: Int) {
                   val value = (percent.coerceIn(1, 100) * 255f / 100f).roundToInt().coerceIn(1, 255)
                   try { Settings.System.putInt(contentResolver, Settings.System.SCREEN_BRIGHTNESS_MODE, Settings.System.SCREEN_BRIGHTNESS_MODE_MANUAL); Settings.System.putInt(contentResolver, Settings.System.SCREEN_BRIGHTNESS, value) } catch (e: Exception) {}
               }
+              
               private fun currentBrightnessPercent(): Int { val v = Settings.System.getInt(contentResolver, Settings.System.SCREEN_BRIGHTNESS, 128); return (v * 100f / 255f).roundToInt().coerceIn(1, 100) }
+              
               private fun setupVolume() {
-                  val current = currentVolumePercent(); sbVolume.max = 100; sbVolume.progress = current; tvVolume.text = "$current%"
+                  updateVolumeSlider()
                   sbVolume.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
                       override fun onProgressChanged(seekBar: SeekBar?, progress: Int, fromUser: Boolean) { tvVolume.text = "$progress%"; if (fromUser) applyVolume(progress) }
                       override fun onStartTrackingTouch(seekBar: SeekBar?) {}; override fun onStopTrackingTouch(seekBar: SeekBar?) {}
                   })
               }
-              private fun applyVolume(percent: Int) { try { val max = audioManager.getStreamMaxVolume(AudioManager.STREAM_MUSIC); val index = (percent.coerceIn(0, 100) / 100f * max).roundToInt().coerceIn(0, max); audioManager.setStreamVolume(AudioManager.STREAM_MUSIC, index, 0) } catch (e: Exception) {} }
-              private fun currentVolumePercent(): Int { val max = audioManager.getStreamMaxVolume(AudioManager.STREAM_MUSIC); if (max <= 0) return 50; val cur = audioManager.getStreamVolume(AudioManager.STREAM_MUSIC); return (cur * 100f / max).roundToInt().coerceIn(0, 100) }
+              
+              private fun applyVolume(percent: Int) {
+                  try {
+                      val max = audioManager.getStreamMaxVolume(currentStream); val index = (percent.coerceIn(0, 100) / 100f * max).roundToInt().coerceIn(0, max)
+                      // 关键修复：使用 adjustStreamVolume 并强制显示UI，确保 OPPO 系统拦截时依然能弹出音量条
+                      if (index > audioManager.getStreamVolume(currentStream)) {
+                          audioManager.adjustStreamVolume(currentStream, AudioManager.ADJUST_RAISE, AudioManager.FLAG_SHOW_UI)
+                      } else if (index < audioManager.getStreamVolume(currentStream)) {
+                          audioManager.adjustStreamVolume(currentStream, AudioManager.ADJUST_LOWER, AudioManager.FLAG_SHOW_UI)
+                      }
+                      audioManager.setStreamVolume(currentStream, index, AudioManager.FLAG_SHOW_UI)
+                      isMuted = index == 0; btnMute.text = if (isMuted) "🔇 已静音" else "🔊 正常"
+                  } catch (e: Exception) {
+                      e.printStackTrace()
+                  }
+              }
+              
               private fun dp(v: Int): Int = (v * resources.displayMetrics.density).roundToInt()
               override fun onDestroy() { super.onDestroy(); try { if (::panel.isInitialized) windowManager.removeView(panel) } catch (_: Exception) {} }
           }
@@ -170,33 +254,45 @@ jobs:
 
           cat << 'EOF' > app/src/main/res/layout/window_assist.xml
           <?xml version="1.0" encoding="utf-8"?>
-          <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android" android:layout_width="290dp" android:layout_height="wrap_content" android:background="@drawable/bg_panel" android:orientation="vertical" android:paddingStart="16dp" android:paddingTop="14dp" android:paddingEnd="16dp" android:paddingBottom="16dp">
-              <LinearLayout android:id="@+id/dragHandle" android:layout_width="match_parent" android:layout_height="wrap_content" android:gravity="center_vertical" android:orientation="horizontal">
-                  <View android:layout_width="8dp" android:layout_height="8dp" android:background="@drawable/dot_cyan" />
-                  <TextView android:layout_width="0dp" android:layout_height="wrap_content" android:layout_marginStart="8dp" android:layout_weight="1" android:letterSpacing="0.15" android:text="ASSIST CONSOLE" android:textColor="#D6F6FF" android:textSize="13sp" android:textStyle="bold" />
-                  <TextView android:id="@+id/btnClose" android:layout_width="wrap_content" android:layout_height="wrap_content" android:paddingStart="12dp" android:paddingTop="4dp" android:paddingEnd="2dp" android:paddingBottom="4dp" android:text="✕" android:textColor="#67E8F9" android:textSize="15sp" />
+          <FrameLayout xmlns:android="http://schemas.android.com/apk/res/android" android:layout_width="wrap_content" android:layout_height="wrap_content">
+              <LinearLayout android:id="@+id/mainPanel" android:layout_width="match_parent" android:layout_height="wrap_content" android:background="@drawable/bg_panel" android:orientation="vertical" android:paddingStart="16dp" android:paddingTop="14dp" android:paddingEnd="16dp" android:paddingBottom="16dp">
+                  <LinearLayout android:id="@+id/dragHandle" android:layout_width="match_parent" android:layout_height="wrap_content" android:gravity="center_vertical" android:orientation="horizontal">
+                      <View android:layout_width="8dp" android:layout_height="8dp" android:background="@drawable/dot_cyan" />
+                      <TextView android:layout_width="0dp" android:layout_height="wrap_content" android:layout_marginStart="8dp" android:layout_weight="1" android:letterSpacing="0.15" android:text="ASSIST CONSOLE" android:textColor="#D6F6FF" android:textSize="13sp" android:textStyle="bold" />
+                      <TextView android:id="@+id/btnZoomOut" android:layout_width="wrap_content" android:layout_height="wrap_content" android:paddingStart="8dp" android:paddingEnd="8dp" android:text="-" android:textColor="#67E8F9" android:textSize="18sp" android:textStyle="bold" />
+                      <TextView android:id="@+id/btnZoomIn" android:layout_width="wrap_content" android:layout_height="wrap_content" android:paddingStart="8dp" android:paddingEnd="8dp" android:text="+" android:textColor="#67E8F9" android:textSize="16sp" android:textStyle="bold" />
+                      <TextView android:id="@+id/btnMinimize" android:layout_width="wrap_content" android:layout_height="wrap_content" android:paddingStart="8dp" android:paddingEnd="8dp" android:text="—" android:textColor="#67E8F9" android:textSize="15sp" />
+                      <TextView android:id="@+id/btnClose" android:layout_width="wrap_content" android:layout_height="wrap_content" android:paddingStart="8dp" android:paddingEnd="2dp" android:text="✕" android:textColor="#67E8F9" android:textSize="15sp" />
+                  </LinearLayout>
+                  <View android:layout_width="match_parent" android:layout_height="1dp" android:layout_marginTop="10dp" android:background="@drawable/line_divider" />
+                  <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="14dp" android:gravity="center_vertical" android:orientation="horizontal">
+                      <TextView android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:letterSpacing="0.1" android:text="屏幕亮度" android:textColor="#9FD8EA" android:textSize="13sp" />
+                      <TextView android:id="@+id/tvBrightnessValue" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="50%" android:textColor="#22D3EE" android:textSize="13sp" android:textStyle="bold" />
+                  </LinearLayout>
+                  <SeekBar android:id="@+id/sbBrightness" android:layout_width="match_parent" android:layout_height="wrap_content" android:max="100" android:progressBackgroundTint="#1E3A4C" android:progressTint="#22D3EE" android:thumbTint="#7DF9FF" />
+                  <Switch android:id="@+id/switchAutoBrightness" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="4dp" android:text="自动亮度" android:textColor="#9FD8EA" android:textSize="12sp" android:thumbTint="#22D3EE" android:trackTint="#1E3A4C" />
+                  <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="14dp" android:gravity="center_vertical" android:orientation="horizontal">
+                      <TextView android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:letterSpacing="0.1" android:text="音量控制" android:textColor="#9FD8EA" android:textSize="13sp" />
+                      <TextView android:id="@+id/tvVolumeValue" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="50%" android:textColor="#22D3EE" android:textSize="13sp" android:textStyle="bold" />
+                  </LinearLayout>
+                  <SeekBar android:id="@+id/sbVolume" android:layout_width="match_parent" android:layout_height="wrap_content" android:max="100" android:progressBackgroundTint="#1E3A4C" android:progressTint="#22D3EE" android:thumbTint="#7DF9FF" />
+                  <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="12dp" android:gravity="center_vertical" android:orientation="horizontal">
+                      <Button android:id="@+id/btnMute" android:layout_width="0dp" android:layout_height="40dp" android:layout_weight="1" android:layout_marginEnd="8dp" android:text="🔊 正常" android:textSize="12sp" android:background="@drawable/bg_btn_exit" android:textColor="#0EA5E9" android:stateListAnimator="@null" />
+                      <Button android:id="@+id/btnStreamSwitch" android:layout_width="0dp" android:layout_height="40dp" android:layout_weight="1" android:text="🎵 媒体" android:textSize="12sp" android:background="@drawable/bg_btn_exit" android:textColor="#0EA5E9" android:stateListAnimator="@null" />
+                  </LinearLayout>
               </LinearLayout>
-              <View android:layout_width="match_parent" android:layout_height="1dp" android:layout_marginTop="10dp" android:background="@drawable/line_divider" />
-              <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="14dp" android:gravity="center_vertical" android:orientation="horizontal">
-                  <TextView android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:letterSpacing="0.1" android:text="屏幕亮度" android:textColor="#9FD8EA" android:textSize="13sp" />
-                  <TextView android:id="@+id/tvBrightnessValue" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="50%" android:textColor="#22D3EE" android:textSize="13sp" android:textStyle="bold" />
-              </LinearLayout>
-              <SeekBar android:id="@+id/sbBrightness" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="2dp" android:max="100" android:progressBackgroundTint="#1E3A4C" android:progressTint="#22D3EE" android:thumbTint="#7DF9FF" />
-              <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="10dp" android:gravity="center_vertical" android:orientation="horizontal">
-                  <TextView android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:letterSpacing="0.1" android:text="媒体音量" android:textColor="#9FD8EA" android:textSize="13sp" />
-                  <TextView android:id="@+id/tvVolumeValue" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="50%" android:textColor="#22D3EE" android:textSize="13sp" android:textStyle="bold" />
-              </LinearLayout>
-              <SeekBar android:id="@+id/sbVolume" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="2dp" android:max="100" android:progressBackgroundTint="#1E3A4C" android:progressTint="#22D3EE" android:thumbTint="#7DF9FF" />
-          </LinearLayout>
+              
+              <TextView android:id="@+id/miniIcon" android:layout_width="wrap_content" android:layout_height="wrap_content" android:visibility="gone" android:paddingStart="16dp" android:paddingTop="8dp" android:paddingEnd="16dp" android:paddingBottom="8dp" android:background="@drawable/bg_mini_icon" android:text="辅助" android:textColor="#22D3EE" android:textSize="14sp" android:textStyle="bold" android:shadowColor="#22D3EE" android:shadowDx="0" android:shadowDy="0" android:shadowRadius="10" />
+          </FrameLayout>
           EOF
 
-          # 简单的 Drawable 和 Values 文件（省略详细内容，使用最精简的写法确保不出错）
           echo '<?xml version="1.0" encoding="utf-8"?><ripple xmlns:android="http://schemas.android.com/apk/res/android" android:color="#40FFFFFF"><item><shape android:shape="rectangle"><corners android:radius="16dp" /><gradient android:angle="0" android:endColor="#22D3EE" android:startColor="#0891B2" /><stroke android:width="1dp" android:color="#A5F3FC" /></shape></item></ripple>' > app/src/main/res/drawable/bg_btn_primary.xml
           echo '<?xml version="1.0" encoding="utf-8"?><ripple xmlns:android="http://schemas.android.com/apk/res/android" android:color="#2222D3EE"><item><shape android:shape="rectangle"><corners android:radius="16dp" /><solid android:color="#FFFFFF" /><stroke android:width="1.5dp" android:color="#0EA5E9" /></shape></item></ripple>' > app/src/main/res/drawable/bg_btn_exit.xml
           echo '<?xml version="1.0" encoding="utf-8"?><shape xmlns:android="http://schemas.android.com/apk/res/android" android:shape="rectangle"><corners android:radius="18dp" /><gradient android:angle="270" android:endColor="#E60C2438" android:startColor="#E60A1526" /><stroke android:width="1dp" android:color="#6622D3EE" /></shape>' > app/src/main/res/drawable/bg_panel.xml
           echo '<?xml version="1.0" encoding="utf-8"?><shape xmlns:android="http://schemas.android.com/apk/res/android" android:shape="oval"><solid android:color="#22D3EE" /><size android:width="8dp" android:height="8dp" /></shape>' > app/src/main/res/drawable/dot_cyan.xml
           echo '<?xml version="1.0" encoding="utf-8"?><shape xmlns:android="http://schemas.android.com/apk/res/android" android:shape="rectangle"><gradient android:angle="0" android:centerColor="#FF22D3EE" android:endColor="#0022D3EE" android:startColor="#0022D3EE" /></shape>' > app/src/main/res/drawable/line_gradient.xml
           echo '<?xml version="1.0" encoding="utf-8"?><shape xmlns:android="http://schemas.android.com/apk/res/android" android:shape="rectangle"><gradient android:angle="0" android:centerColor="#8822D3EE" android:endColor="#0022D3EE" android:startColor="#0022D3EE" /></shape>' > app/src/main/res/drawable/line_divider.xml
+          echo '<?xml version="1.0" encoding="utf-8"?><shape xmlns:android="http://schemas.android.com/apk/res/android" android:shape="rectangle"><corners android:radius="20dp" /><solid android:color="#CC0A1526" /><stroke android:width="1dp" android:color="#6622D3EE" /></shape>' > app/src/main/res/drawable/bg_mini_icon.xml
           echo '<?xml version="1.0" encoding="utf-8"?><resources><style name="Theme.TechAssist" parent="Theme.AppCompat.Light.NoActionBar"><item name="android:windowBackground">@android:color/white</item><item name="android:statusBarColor">@android:color/white</item><item name="android:navigationBarColor">@android:color/white</item></style></resources>' > app/src/main/res/values/themes.xml
           echo '<?xml version="1.0" encoding="utf-8"?><resources><string name="app_name">科技辅助</string></resources>' > app/src/main/res/values/strings.xml
 
