@@ -52,7 +52,7 @@ jobs:
           android {
               namespace 'com.example.techassist'
               compileSdk 34
-              defaultConfig { applicationId "com.example.techassist"; minSdk 24; targetSdk 34; versionCode 22; versionName "22.0" }
+              defaultConfig { applicationId "com.example.techassist"; minSdk 24; targetSdk 34; versionCode 23; versionName "23.0" }
               buildTypes { release { minifyEnabled false } }
               compileOptions { sourceCompatibility JavaVersion.VERSION_17; targetCompatibility JavaVersion.VERSION_17 }
               kotlinOptions { jvmTarget = '17' }
@@ -90,35 +90,74 @@ jobs:
 
           cat << 'EOF' > app/src/main/java/com/example/techassist/MainActivity.kt
           package com.example.techassist
-          import android.content.Intent; import android.net.Uri; import android.os.Build; import android.os.Bundle; import android.provider.Settings; import android.view.MotionEvent; import android.view.View; import android.widget.Button; import android.widget.Toast
-          import androidx.activity.result.contract.ActivityResultContracts; import androidx.appcompat.app.AppCompatActivity
+          import android.content.Intent
+          import android.net.Uri
+          import android.os.Build
+          import android.os.Bundle
+          import android.provider.Settings
+          import android.view.MotionEvent
+          import android.view.View
+          import android.widget.Button
+          import android.widget.Toast
+          import androidx.activity.result.contract.ActivityResultContracts
+          import androidx.appcompat.app.AppCompatActivity
 
           class MainActivity : AppCompatActivity() {
-              private lateinit var btnStart: Button; private lateinit var btnExit: Button
-              private val overlayPermLauncher = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { if (Settings.canDrawOverlays(this)) requestWriteSettingsOrStart() else toast("未授予悬浮窗权限") }
-              private val writeSettingsLauncher = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { startAssistService() }
-              override fun onCreate(savedInstanceState: Bundle?) {
-                  super.onCreate(savedInstanceState); setContentView(R.layout.activity_main)
-                  btnStart = findViewById(R.id.btnStart); btnExit = findViewById(R.id.btnExit)
-                  btnStart.applyPressEffect(); btnExit.applyPressEffect()
-                  btnStart.setOnClickListener { onStartClicked() }
-                  btnExit.setOnClickListener { stopService(Intent(this, AssistService::class.java)); finishAffinity() }
+              private lateinit var btnStart: Button
+              private lateinit var btnExit: Button
+              private val overlayPermLauncher = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) {
+                  if (Settings.canDrawOverlays(this)) requestWriteSettingsOrStart() else toast("未授予悬浮窗权限")
               }
+              private val writeSettingsLauncher = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { startAssistService() }
+
+              override fun onCreate(savedInstanceState: Bundle?) {
+                  super.onCreate(savedInstanceState)
+                  setContentView(R.layout.activity_main)
+                  btnStart = findViewById(R.id.btnStart)
+                  btnExit = findViewById(R.id.btnExit)
+                  btnStart.applyPressEffect()
+                  btnExit.applyPressEffect()
+                  btnStart.setOnClickListener { onStartClicked() }
+                  btnExit.setOnClickListener {
+                      stopService(Intent(this, AssistService::class.java))
+                      finishAffinity()
+                  }
+              }
+
               private fun onStartClicked() {
                   if (!Settings.canDrawOverlays(this)) {
-                      try { overlayPermLauncher.launch(Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:$packageName"))) } catch (e: Exception) { toast("请手动去设置里授予悬浮窗权限") }
+                      try {
+                          overlayPermLauncher.launch(Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:$packageName")))
+                      } catch (e: Exception) { toast("请手动去设置里授予悬浮窗权限") }
                   } else { requestWriteSettingsOrStart() }
               }
+
               private fun requestWriteSettingsOrStart() {
-                  try { if (!Settings.System.canWrite(this)) writeSettingsLauncher.launch(Intent(Settings.ACTION_MANAGE_WRITE_SETTINGS, Uri.parse("package:$packageName"))) else startAssistService() } catch (e: Exception) { startAssistService() }
+                  try {
+                      if (!Settings.System.canWrite(this)) {
+                          writeSettingsLauncher.launch(Intent(Settings.ACTION_MANAGE_WRITE_SETTINGS, Uri.parse("package:$packageName")))
+                      } else { startAssistService() }
+                  } catch (e: Exception) { startAssistService() }
               }
+
               private fun startAssistService() {
                   val intent = Intent(this, AssistService::class.java)
                   if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) startForegroundService(intent) else startService(intent)
-                  toast("辅助已启动"); moveTaskToBack(true)
+                  toast("辅助已启动")
+                  moveTaskToBack(true)
               }
+
               private fun toast(msg: String) = Toast.makeText(this, msg, Toast.LENGTH_SHORT).show()
-              private fun View.applyPressEffect() { setOnTouchListener { v, event -> when (event.action) { MotionEvent.ACTION_DOWN -> v.animate().scaleX(0.97f).scaleY(0.97f).setDuration(90).start(); MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> v.animate().scaleX(1f).scaleY(1f).setDuration(140).start() }; false } }
+
+              private fun View.applyPressEffect() {
+                  setOnTouchListener { v, event ->
+                      when (event.action) {
+                          MotionEvent.ACTION_DOWN -> v.animate().scaleX(0.97f).scaleY(0.97f).setDuration(90).start()
+                          MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> v.animate().scaleX(1f).scaleY(1f).setDuration(140).start()
+                      }
+                      false
+                  }
+              }
           }
           EOF
 
@@ -149,6 +188,7 @@ jobs:
           import android.os.Handler
           import android.os.IBinder
           import android.os.Looper
+          import android.os.PowerManager
           import android.provider.MediaStore
           import android.provider.Settings
           import android.view.Gravity
@@ -194,7 +234,16 @@ jobs:
               private lateinit var btnBattery: Button
               private lateinit var btnPerm: Button
               private lateinit var btnClipboard: Button
+              private lateinit var btnSleep: Button
+              private lateinit var btnBack: Button
+              private lateinit var btnRecents: Button
+              private lateinit var btnTimeout: Button
+              private lateinit var btnLocation: Button
+              private lateinit var btnDev: Button
+              private lateinit var btnMaxBrightness: Button
+              private lateinit var btnMinBrightness: Button
               private lateinit var colorDots: LinearLayout
+
               private var currentStream = AudioManager.STREAM_MUSIC
               private var isMuted = false
               private var panelWidthPx = 0
@@ -283,6 +332,14 @@ jobs:
                   btnBattery = panel.findViewById(R.id.btnBattery)
                   btnPerm = panel.findViewById(R.id.btnPerm)
                   btnClipboard = panel.findViewById(R.id.btnClipboard)
+                  btnSleep = panel.findViewById(R.id.btnSleep)
+                  btnBack = panel.findViewById(R.id.btnBack)
+                  btnRecents = panel.findViewById(R.id.btnRecents)
+                  btnTimeout = panel.findViewById(R.id.btnTimeout)
+                  btnLocation = panel.findViewById(R.id.btnLocation)
+                  btnDev = panel.findViewById(R.id.btnDev)
+                  btnMaxBrightness = panel.findViewById(R.id.btnMaxBrightness)
+                  btnMinBrightness = panel.findViewById(R.id.btnMinBrightness)
                   colorDots = panel.findViewById(R.id.colorDots)
 
                   setupDrag(panel.findViewById(R.id.dragHandle))
@@ -301,42 +358,66 @@ jobs:
               }
 
               private fun setupColorDots() {
-                  val colors = listOf(
-                      intArrayOf(0xFF22D3EE.toInt(), R.drawable.bg_panel),
-                      intArrayOf(0xFF3B82F6.toInt(), R.drawable.bg_panel_blue),
-                      intArrayOf(0xFFA855F7.toInt(), R.drawable.bg_panel_purple),
-                      intArrayOf(0xFF10B981.toInt(), R.drawable.bg_panel_green),
-                      intArrayOf(0xFFEF4444.toInt(), R.drawable.bg_panel_red)
-                  )
                   colorDots.removeAllViews()
-                  for (item in colors) {
-                      val colorVal = item[0]
-                      val drawableId = item[1]
+                  val ids = intArrayOf(
+                      R.drawable.bg_panel,
+                      R.drawable.bg_panel_blue,
+                      R.drawable.bg_panel_purple,
+                      R.drawable.bg_panel_green,
+                      R.drawable.bg_panel_red,
+                      R.drawable.bg_panel_orange,
+                      R.drawable.bg_panel_pink,
+                      R.drawable.bg_panel_gray
+                  )
+                  val colors = intArrayOf(
+                      0xFF22D3EE.toInt(),
+                      0xFF3B82F6.toInt(),
+                      0xFFA855F7.toInt(),
+                      0xFF10B981.toInt(),
+                      0xFFEF4444.toInt(),
+                      0xFFF97316.toInt(),
+                      0xFFEC4899.toInt(),
+                      0xFF64748B.toInt()
+                  )
+                  for (i in ids.indices) {
                       val dot = View(this)
-                      dot.layoutParams = LinearLayout.LayoutParams(dp(22), dp(22)).apply { marginEnd = dp(8) }
-                      try {
-                          val d = resources.getDrawable(drawableId, null)
-                          d.setTint(colorVal)
-                          dot.background = d
-                      } catch (e: Exception) {
-                          dot.setBackgroundColor(colorVal)
-                      }
+                      val lp = LinearLayout.LayoutParams(dp(20), dp(20))
+                      lp.marginEnd = dp(6)
+                      dot.layoutParams = lp
+                      dot.setBackgroundColor(colors[i])
+                      val did = ids[i]
                       dot.setOnClickListener {
-                          mainPanel.setBackgroundResource(drawableId)
-                          Toast.makeText(this@AssistService, "主题已切换", Toast.LENGTH_SHORT).show()
+                          mainPanel.setBackgroundResource(did)
+                          Toast.makeText(this@AssistService, "已切换主题", Toast.LENGTH_SHORT).show()
                       }
                       colorDots.addView(dot)
                   }
               }
 
               private fun setupMiniDrag(handle: View) {
-                  var startX = 0; var startY = 0; var downX = 0f; var downY = 0f
-                  handle.setOnTouchListener { _, event -> when (event.action) {
-                      MotionEvent.ACTION_DOWN -> { startX = params.x; startY = params.y; downX = event.rawX; downY = event.rawY; true }
-                      MotionEvent.ACTION_MOVE -> { params.x = startX + (event.rawX - downX).toInt(); params.y = startY + (event.rawY - downY).toInt(); windowManager.updateViewLayout(panel, params); true }
-                      MotionEvent.ACTION_UP -> { snapToEdge(); false }
-                      else -> false
-                  } }
+                  var startX = 0
+                  var startY = 0
+                  var downX = 0f
+                  var downY = 0f
+                  handle.setOnTouchListener { _, event ->
+                      when (event.action) {
+                          MotionEvent.ACTION_DOWN -> {
+                              startX = params.x
+                              startY = params.y
+                              downX = event.rawX
+                              downY = event.rawY
+                              true
+                          }
+                          MotionEvent.ACTION_MOVE -> {
+                              params.x = startX + (event.rawX - downX).toInt()
+                              params.y = startY + (event.rawY - downY).toInt()
+                              windowManager.updateViewLayout(panel, params)
+                              true
+                          }
+                          MotionEvent.ACTION_UP -> { snapToEdge(); false }
+                          else -> false
+                      }
+                  }
               }
 
               private fun snapToEdge() {
@@ -409,6 +490,14 @@ jobs:
                   btnBattery.setOnClickListener { openSetting(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS) }
                   btnPerm.setOnClickListener { openSetting(Settings.ACTION_APPLICATION_DETAILS_SETTINGS) }
                   btnClipboard.setOnClickListener { showClipboard() }
+                  btnSleep.setOnClickListener { goSleep() }
+                  btnBack.setOnClickListener { performBack() }
+                  btnRecents.setOnClickListener { openRecents() }
+                  btnTimeout.setOnClickListener { openSetting(Settings.ACTION_DISPLAY_SETTINGS) }
+                  btnLocation.setOnClickListener { openSetting(Settings.ACTION_LOCATION_SOURCE_SETTINGS) }
+                  btnDev.setOnClickListener { openSetting(Settings.ACTION_APPLICATION_DEVELOPMENT_SETTINGS) }
+                  btnMaxBrightness.setOnClickListener { setBrightnessMax() }
+                  btnMinBrightness.setOnClickListener { setBrightnessMin() }
 
                   switchAuto.setOnCheckedChangeListener { _, isChecked ->
                       try {
@@ -507,6 +596,47 @@ jobs:
                   } catch (e: Exception) {
                       Toast.makeText(this, "读取失败", Toast.LENGTH_SHORT).show()
                   }
+              }
+
+              private fun goSleep() {
+                  try {
+                      val pm = getSystemService(Context.POWER_SERVICE) as PowerManager
+                      if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+                          val wl = pm.newWakeLock(PowerManager.PROXIMITY_SCREEN_OFF_WAKE_LOCK, "TechAssist:Sleep")
+                          wl.acquire(1000)
+                      }
+                      val deviceAdmin = android.app.admin.DevicePolicyManager::class.java
+                  } catch (e: Exception) {
+                      Toast.makeText(this, "息屏失败", Toast.LENGTH_SHORT).show()
+                  }
+              }
+
+              private fun performBack() {
+                  try {
+                      val service = getSystemService(Context.ACCESSIBILITY_SERVICE) as android.view.accessibility.AccessibilityManager
+                      Toast.makeText(this, "返回键需无障碍权限，暂用软返回", Toast.LENGTH_SHORT).show()
+                      Runtime.getRuntime().exec("input keyevent 4")
+                  } catch (e: Exception) {
+                      Toast.makeText(this, "返回失败", Toast.LENGTH_SHORT).show()
+                  }
+              }
+
+              private fun openRecents() {
+                  try {
+                      Runtime.getRuntime().exec("input keyevent 187")
+                  } catch (e: Exception) {
+                      Toast.makeText(this, "打开最近任务失败", Toast.LENGTH_SHORT).show()
+                  }
+              }
+
+              private fun setBrightnessMax() {
+                  sbBrightness.progress = 100
+                  applyBrightness(100)
+              }
+
+              private fun setBrightnessMin() {
+                  sbBrightness.progress = 1
+                  applyBrightness(1)
               }
 
               private fun takeScreenshot() {
@@ -624,32 +754,53 @@ jobs:
               }
 
               private fun setupDrag(handle: View) {
-                  var startX = 0; var startY = 0; var downX = 0f; var downY = 0f
-                  handle.setOnTouchListener { _, event -> when (event.action) {
-                      MotionEvent.ACTION_DOWN -> { startX = params.x; startY = params.y; downX = event.rawX; downY = event.rawY; true }
-                      MotionEvent.ACTION_MOVE -> { params.x = startX + (event.rawX - downX).toInt(); params.y = startY + (event.rawY - downY).toInt(); windowManager.updateViewLayout(panel, params); true }
-                      MotionEvent.ACTION_UP -> { snapToEdge(); false }
-                      else -> false
-                  } }
+                  var startX = 0
+                  var startY = 0
+                  var downX = 0f
+                  var downY = 0f
+                  handle.setOnTouchListener { _, event ->
+                      when (event.action) {
+                          MotionEvent.ACTION_DOWN -> {
+                              startX = params.x
+                              startY = params.y
+                              downX = event.rawX
+                              downY = event.rawY
+                              true
+                          }
+                          MotionEvent.ACTION_MOVE -> {
+                              params.x = startX + (event.rawX - downX).toInt()
+                              params.y = startY + (event.rawY - downY).toInt()
+                              windowManager.updateViewLayout(panel, params)
+                              true
+                          }
+                          MotionEvent.ACTION_UP -> { snapToEdge(); false }
+                          else -> false
+                      }
+                  }
               }
 
               private fun setupResizeHandle(handle: View) {
                   var startWidth = 0
                   var downX = 0f
-                  handle.setOnTouchListener { _, event -> when (event.action) {
-                      MotionEvent.ACTION_DOWN -> { startWidth = panelWidthPx; downX = event.rawX; true }
-                      MotionEvent.ACTION_MOVE -> {
-                          val deltaX = event.rawX - downX
-                          val screenWidth = resources.displayMetrics.widthPixels
-                          val newWidth = (startWidth + deltaX).toInt().coerceIn(dp(180), screenWidth - dp(16))
-                          params.width = newWidth
-                          params.height = WindowManager.LayoutParams.WRAP_CONTENT
-                          panelWidthPx = newWidth
-                          windowManager.updateViewLayout(panel, params)
-                          true
+                  handle.setOnTouchListener { _, event ->
+                      when (event.action) {
+                          MotionEvent.ACTION_DOWN -> {
+                              startWidth = panelWidthPx
+                              downX = event.rawX
+                              true
+                          }
+                          MotionEvent.ACTION_MOVE -> {
+                              val deltaX = event.rawX - downX
+                              val screenWidth = resources.displayMetrics.widthPixels
+                              val newWidth = (startWidth + deltaX).toInt().coerceIn(dp(180), screenWidth - dp(16))
+                              params.width = newWidth
+                              panelWidthPx = newWidth
+                              windowManager.updateViewLayout(panel, params)
+                              true
+                          }
+                          else -> false
                       }
-                      else -> false
-                  } }
+                  }
               }
 
               private fun setupBrightness() {
@@ -719,6 +870,7 @@ jobs:
                   }
               }
 
+              @Deprecated("Deprecated in Java")
               override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
                   super.onActivityResult(requestCode, resultCode, data)
                   if (resultCode != Activity.RESULT_OK) return
@@ -756,7 +908,7 @@ jobs:
           <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android" android:layout_width="match_parent" android:layout_height="match_parent" android:background="#FFFFFFFF" android:gravity="center" android:orientation="vertical" android:paddingStart="40dp" android:paddingEnd="40dp">
               <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:letterSpacing="0.3" android:text="TECH ASSIST" android:textColor="#0F172A" android:textSize="26sp" android:textStyle="bold" />
               <View android:layout_width="90dp" android:layout_height="2dp" android:layout_marginTop="14dp" android:background="@drawable/line_gradient" />
-              <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:layout_marginTop="12dp" android:letterSpacing="0.08" android:text="超级控制台 · 20+ 功能" android:textColor="#94A3B8" android:textSize="13sp" />
+              <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:layout_marginTop="12dp" android:letterSpacing="0.08" android:text="超级控制台 · 30+ 功能" android:textColor="#94A3B8" android:textSize="13sp" />
               <Button android:id="@+id/btnStart" android:layout_width="match_parent" android:layout_height="56dp" android:layout_marginTop="60dp" android:background="@drawable/bg_btn_primary" android:letterSpacing="0.2" android:stateListAnimator="@null" android:text="启 动 辅 助" android:textColor="#FFFFFF" android:textSize="16sp" />
               <Button android:id="@+id/btnExit" android:layout_width="match_parent" android:layout_height="56dp" android:layout_marginTop="18dp" android:background="@drawable/bg_btn_exit" android:letterSpacing="0.2" android:stateListAnimator="@null" android:text="退 出 软 件" android:textColor="#0EA5E9" android:textSize="16sp" />
           </LinearLayout>
@@ -802,15 +954,30 @@ jobs:
                       <LinearLayout android:id="@+id/colorDots" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="10dp" android:orientation="horizontal" android:gravity="center_vertical" />
 
                       <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="10dp" android:gravity="center_vertical" android:orientation="horizontal">
+                          <Button android:id="@+id/btnMaxBrightness" android:layout_width="0dp" android:layout_height="40dp" android:layout_weight="1" android:layout_marginEnd="6dp" android:text="🔆 最亮" android:textSize="11sp" android:background="@drawable/bg_btn_exit" android:textColor="#0EA5E9" android:stateListAnimator="@null" />
+                          <Button android:id="@+id/btnMinBrightness" android:layout_width="0dp" android:layout_height="40dp" android:layout_weight="1" android:text="🔅 最暗" android:textSize="11sp" android:background="@drawable/bg_btn_exit" android:textColor="#0EA5E9" android:stateListAnimator="@null" />
+                      </LinearLayout>
+
+                      <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="6dp" android:gravity="center_vertical" android:orientation="horizontal">
                           <Button android:id="@+id/btnFlashlight" android:layout_width="0dp" android:layout_height="40dp" android:layout_weight="1" android:layout_marginEnd="6dp" android:text="🔦 手电" android:textSize="11sp" android:background="@drawable/bg_btn_exit" android:textColor="#0EA5E9" android:stateListAnimator="@null" />
-                          <Button android:id="@+id/btnKeepScreenOn" android:layout_width="0dp" android:layout_height="40dp" android:layout_weight="1" android:layout_marginEnd="6dp" android:text="🔓 常亮" android:textSize="11sp" android:background="@drawable/bg_btn_exit" android:textColor="#0EA5E9" android:stateListAnimator="@null" />
-                          <Button android:id="@+id/btnHome" android:layout_width="0dp" android:layout_height="40dp" android:layout_weight="1" android:text="🏠 桌面" android:textSize="11sp" android:background="@drawable/bg_btn_exit" android:textColor="#0EA5E9" android:stateListAnimator="@null" />
+                          <Button android:id="@+id/btnKeepScreenOn" android:layout_width="0dp" android:layout_height="40dp" android:layout_weight="1" android:text="🔓 常亮" android:textSize="11sp" android:background="@drawable/bg_btn_exit" android:textColor="#0EA5E9" android:stateListAnimator="@null" />
                       </LinearLayout>
 
                       <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="6dp" android:gravity="center_vertical" android:orientation="horizontal">
                           <Button android:id="@+id/btnNight" android:layout_width="0dp" android:layout_height="40dp" android:layout_weight="1" android:layout_marginEnd="6dp" android:text="☀️ 日间" android:textSize="11sp" android:background="@drawable/bg_btn_exit" android:textColor="#0EA5E9" android:stateListAnimator="@null" />
-                          <Button android:id="@+id/btnOrientation" android:layout_width="0dp" android:layout_height="40dp" android:layout_weight="1" android:layout_marginEnd="6dp" android:text="🔄 自动" android:textSize="11sp" android:background="@drawable/bg_btn_exit" android:textColor="#0EA5E9" android:stateListAnimator="@null" />
-                          <Button android:id="@+id/btnClipboard" android:layout_width="0dp" android:layout_height="40dp" android:layout_weight="1" android:text="📋 剪贴" android:textSize="11sp" android:background="@drawable/bg_btn_exit" android:textColor="#0EA5E9" android:stateListAnimator="@null" />
+                          <Button android:id="@+id/btnOrientation" android:layout_width="0dp" android:layout_height="40dp" android:layout_weight="1" android:text="🔄 自动" android:textSize="11sp" android:background="@drawable/bg_btn_exit" android:textColor="#0EA5E9" android:stateListAnimator="@null" />
+                      </LinearLayout>
+
+                      <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="6dp" android:gravity="center_vertical" android:orientation="horizontal">
+                          <Button android:id="@+id/btnHome" android:layout_width="0dp" android:layout_height="40dp" android:layout_weight="1" android:layout_marginEnd="6dp" android:text="🏠 桌面" android:textSize="11sp" android:background="@drawable/bg_btn_exit" android:textColor="#0EA5E9" android:stateListAnimator="@null" />
+                          <Button android:id="@+id/btnBack" android:layout_width="0dp" android:layout_height="40dp" android:layout_weight="1" android:layout_marginEnd="6dp" android:text="⬅️ 返回" android:textSize="11sp" android:background="@drawable/bg_btn_exit" android:textColor="#0EA5E9" android:stateListAnimator="@null" />
+                          <Button android:id="@+id/btnRecents" android:layout_width="0dp" android:layout_height="40dp" android:layout_weight="1" android:text="🔲 任务" android:textSize="11sp" android:background="@drawable/bg_btn_exit" android:textColor="#0EA5E9" android:stateListAnimator="@null" />
+                      </LinearLayout>
+
+                      <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="6dp" android:gravity="center_vertical" android:orientation="horizontal">
+                          <Button android:id="@+id/btnSleep" android:layout_width="0dp" android:layout_height="40dp" android:layout_weight="1" android:layout_marginEnd="6dp" android:text="💤 息屏" android:textSize="11sp" android:background="@drawable/bg_btn_exit" android:textColor="#0EA5E9" android:stateListAnimator="@null" />
+                          <Button android:id="@+id/btnClipboard" android:layout_width="0dp" android:layout_height="40dp" android:layout_weight="1" android:layout_marginEnd="6dp" android:text="📋 剪贴" android:textSize="11sp" android:background="@drawable/bg_btn_exit" android:textColor="#0EA5E9" android:stateListAnimator="@null" />
+                          <Button android:id="@+id/btnTimeout" android:layout_width="0dp" android:layout_height="40dp" android:layout_weight="1" android:text="⏱ 超时" android:textSize="11sp" android:background="@drawable/bg_btn_exit" android:textColor="#0EA5E9" android:stateListAnimator="@null" />
                       </LinearLayout>
 
                       <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="6dp" android:gravity="center_vertical" android:orientation="horizontal">
@@ -830,6 +997,11 @@ jobs:
                           <Button android:id="@+id/btnBattery" android:layout_width="0dp" android:layout_height="40dp" android:layout_weight="1" android:layout_marginEnd="6dp" android:text="🔋 电池" android:textSize="11sp" android:background="@drawable/bg_btn_exit" android:textColor="#0EA5E9" android:stateListAnimator="@null" />
                           <Button android:id="@+id/btnPerm" android:layout_width="0dp" android:layout_height="40dp" android:layout_weight="1" android:text="🔐 权限" android:textSize="11sp" android:background="@drawable/bg_btn_exit" android:textColor="#0EA5E9" android:stateListAnimator="@null" />
                       </LinearLayout>
+
+                      <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="6dp" android:gravity="center_vertical" android:orientation="horizontal">
+                          <Button android:id="@+id/btnLocation" android:layout_width="0dp" android:layout_height="40dp" android:layout_weight="1" android:layout_marginEnd="6dp" android:text="📍 位置" android:textSize="11sp" android:background="@drawable/bg_btn_exit" android:textColor="#0EA5E9" android:stateListAnimator="@null" />
+                          <Button android:id="@+id/btnDev" android:layout_width="0dp" android:layout_height="40dp" android:layout_weight="1" android:text="🛠 开发者" android:textSize="11sp" android:background="@drawable/bg_btn_exit" android:textColor="#0EA5E9" android:stateListAnimator="@null" />
+                      </LinearLayout>
                   </LinearLayout>
 
                   <View android:id="@+id/resizeHandle" android:layout_width="32dp" android:layout_height="24dp" android:layout_gravity="end" android:layout_marginTop="8dp" android:background="@drawable/bg_resize_handle" />
@@ -846,8 +1018,10 @@ jobs:
           echo '<?xml version="1.0" encoding="utf-8"?><shape xmlns:android="http://schemas.android.com/apk/res/android" android:shape="rectangle"><corners android:radius="18dp" /><gradient android:angle="270" android:endColor="#F03B076E" android:startColor="#F04C1D95" /><stroke android:width="1dp" android:color="#88A855F7" /></shape>' > app/src/main/res/drawable/bg_panel_purple.xml
           echo '<?xml version="1.0" encoding="utf-8"?><shape xmlns:android="http://schemas.android.com/apk/res/android" android:shape="rectangle"><corners android:radius="18dp" /><gradient android:angle="270" android:endColor="#F0064E3B" android:startColor="#F0047A50" /><stroke android:width="1dp" android:color="#8810B981" /></shape>' > app/src/main/res/drawable/bg_panel_green.xml
           echo '<?xml version="1.0" encoding="utf-8"?><shape xmlns:android="http://schemas.android.com/apk/res/android" android:shape="rectangle"><corners android:radius="18dp" /><gradient android:angle="270" android:endColor="#F07F1D1D" android:startColor="#F0991B1B" /><stroke android:width="1dp" android:color="#88EF4444" /></shape>' > app/src/main/res/drawable/bg_panel_red.xml
+          echo '<?xml version="1.0" encoding="utf-8"?><shape xmlns:android="http://schemas.android.com/apk/res/android" android:shape="rectangle"><corners android:radius="18dp" /><gradient android:angle="270" android:endColor="#F07C2D12" android:startColor="#F09A3412" /><stroke android:width="1dp" android:color="#88F97316" /></shape>' > app/src/main/res/drawable/bg_panel_orange.xml
+          echo '<?xml version="1.0" encoding="utf-8"?><shape xmlns:android="http://schemas.android.com/apk/res/android" android:shape="rectangle"><corners android:radius="18dp" /><gradient android:angle="270" android:endColor="#F0831053" android:startColor="#F09D174D" /><stroke android:width="1dp" android:color="#88EC4899" /></shape>' > app/src/main/res/drawable/bg_panel_pink.xml
+          echo '<?xml version="1.0" encoding="utf-8"?><shape xmlns:android="http://schemas.android.com/apk/res/android" android:shape="rectangle"><corners android:radius="18dp" /><gradient android:angle="270" android:endColor="#F0303A4A" android:startColor="#F0454F60" /><stroke android:width="1dp" android:color="#8864748B" /></shape>' > app/src/main/res/drawable/bg_panel_gray.xml
           echo '<?xml version="1.0" encoding="utf-8"?><shape xmlns:android="http://schemas.android.com/apk/res/android" android:shape="oval"><solid android:color="#22D3EE" /><size android:width="8dp" android:height="8dp" /></shape>' > app/src/main/res/drawable/dot_cyan.xml
-          echo '<?xml version="1.0" encoding="utf-8"?><shape xmlns:android="http://schemas.android.com/apk/res/android" android:shape="oval"><solid android:color="#FFFFFF" /><stroke android:width="2dp" android:color="#33FFFFFF" /><size android:width="22dp" android:height="22dp" /></shape>' > app/src/main/res/drawable/color_dot.xml
           echo '<?xml version="1.0" encoding="utf-8"?><shape xmlns:android="http://schemas.android.com/apk/res/android" android:shape="rectangle"><gradient android:angle="0" android:centerColor="#FF22D3EE" android:endColor="#0022D3EE" android:startColor="#0022D3EE" /></shape>' > app/src/main/res/drawable/line_gradient.xml
           echo '<?xml version="1.0" encoding="utf-8"?><shape xmlns:android="http://schemas.android.com/apk/res/android" android:shape="rectangle"><gradient android:angle="0" android:centerColor="#8822D3EE" android:endColor="#0022D3EE" android:startColor="#0022D3EE" /></shape>' > app/src/main/res/drawable/line_divider.xml
           echo '<?xml version="1.0" encoding="utf-8"?><shape xmlns:android="http://schemas.android.com/apk/res/android" android:shape="rectangle"><corners android:radius="20dp" /><solid android:color="#CC0A1526" /><stroke android:width="1dp" android:color="#6622D3EE" /></shape>' > app/src/main/res/drawable/bg_mini_icon.xml
