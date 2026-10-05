@@ -11,11 +11,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Unzip Source
+      - name: Unzip and Inspect
         run: |
           mkdir -p project
           unzip -q *.zip -d project
-          # 自动处理各种文件夹嵌套，把真实的项目文件找出来
+          # 自动寻找真实项目根目录
           if [ -d "project/TechAssist" ]; then
             mv project/TechAssist/* project/
             mv project/TechAssist/.[!.]* project/ 2>/dev/null || true
@@ -24,6 +24,25 @@ jobs:
             if [ ! -z "$DIR" ]; then
               mv $DIR/* project/
               mv $DIR/.[!.]* project/ 2>/dev/null || true
+            fi
+          fi
+          echo "===== 文件结构检查 ====="
+          find . -type f | sort
+          echo "========================"
+
+      - name: Auto Fix Path (如果文件位置不对，自动纠正)
+        run: |
+          cd project
+          # 如果 app/src/main/AndroidManifest.xml 不存在，但找到了它，就自动移回去
+          if [ ! -f "app/src/main/AndroidManifest.xml" ]; then
+            FOUND=$(find . -name "AndroidManifest.xml" | head -n 1)
+            if [ ! -z "$FOUND" ]; then
+              echo "找到 AndroidManifest.xml，位置在: $FOUND，自动修复中..."
+              mkdir -p app/src/main
+              mv $FOUND app/src/main/AndroidManifest.xml
+            else
+              echo "⚠️ 严重错误：你的压缩包里根本没有 AndroidManifest.xml，请去 MT 管理器里检查！"
+              exit 1
             fi
           fi
 
@@ -36,7 +55,7 @@ jobs:
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v3
         with:
-          gradle-version: 8.4 # ⭐ 强制使用8.4版本，解决之前的报错
+          gradle-version: 8.4
 
       - name: Build Debug APK
         run: |
