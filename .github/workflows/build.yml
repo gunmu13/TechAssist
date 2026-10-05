@@ -52,7 +52,7 @@ jobs:
           android {
               namespace 'com.example.techassist'
               compileSdk 34
-              defaultConfig { applicationId "com.example.techassist"; minSdk 24; targetSdk 34; versionCode 21; versionName "21.0" }
+              defaultConfig { applicationId "com.example.techassist"; minSdk 24; targetSdk 34; versionCode 22; versionName "22.0" }
               buildTypes { release { minifyEnabled false } }
               compileOptions { sourceCompatibility JavaVersion.VERSION_17; targetCompatibility JavaVersion.VERSION_17 }
               kotlinOptions { jvmTarget = '17' }
@@ -136,7 +136,6 @@ jobs:
           import android.content.Intent
           import android.content.res.Configuration
           import android.graphics.Bitmap
-          import android.graphics.Color
           import android.graphics.PixelFormat
           import android.hardware.camera2.CameraManager
           import android.hardware.display.DisplayManager
@@ -303,22 +302,28 @@ jobs:
 
               private fun setupColorDots() {
                   val colors = listOf(
-                      Color.parseColor("#22D3EE") to R.drawable.bg_panel,
-                      Color.parseColor("#3B82F6") to R.drawable.bg_panel_blue,
-                      Color.parseColor("#A855F7") to R.drawable.bg_panel_purple,
-                      Color.parseColor("#10B981") to R.drawable.bg_panel_green,
-                      Color.parseColor("#EF4444") to R.drawable.bg_panel_red
+                      intArrayOf(0xFF22D3EE.toInt(), R.drawable.bg_panel),
+                      intArrayOf(0xFF3B82F6.toInt(), R.drawable.bg_panel_blue),
+                      intArrayOf(0xFFA855F7.toInt(), R.drawable.bg_panel_purple),
+                      intArrayOf(0xFF10B981.toInt(), R.drawable.bg_panel_green),
+                      intArrayOf(0xFFEF4444.toInt(), R.drawable.bg_panel_red)
                   )
                   colorDots.removeAllViews()
-                  for ((color, drawable) in colors) {
-                      val dot = View(this).apply {
-                          layoutParams = LinearLayout.LayoutParams(dp(22), dp(22)).apply { marginEnd = dp(8) }
-                          background = getDrawable(R.drawable.color_dot)
-                          background.setTint(color)
-                          setOnClickListener {
-                              mainPanel.setBackgroundResource(drawable)
-                              Toast.makeText(this@AssistService, "主题已切换", Toast.LENGTH_SHORT).show()
-                          }
+                  for (item in colors) {
+                      val colorVal = item[0]
+                      val drawableId = item[1]
+                      val dot = View(this)
+                      dot.layoutParams = LinearLayout.LayoutParams(dp(22), dp(22)).apply { marginEnd = dp(8) }
+                      try {
+                          val d = resources.getDrawable(drawableId, null)
+                          d.setTint(colorVal)
+                          dot.background = d
+                      } catch (e: Exception) {
+                          dot.setBackgroundColor(colorVal)
+                      }
+                      dot.setOnClickListener {
+                          mainPanel.setBackgroundResource(drawableId)
+                          Toast.makeText(this@AssistService, "主题已切换", Toast.LENGTH_SHORT).show()
                       }
                       colorDots.addView(dot)
                   }
