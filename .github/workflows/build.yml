@@ -52,7 +52,7 @@ jobs:
           android {
               namespace 'com.example.techassist'
               compileSdk 34
-              defaultConfig { applicationId "com.example.techassist"; minSdk 24; targetSdk 34; versionCode 24; versionName "24.0" }
+              defaultConfig { applicationId "com.example.techassist"; minSdk 24; targetSdk 34; versionCode 27; versionName "27.0" }
               buildTypes { release { minifyEnabled false } }
               compileOptions { sourceCompatibility JavaVersion.VERSION_17; targetCompatibility JavaVersion.VERSION_17 }
               kotlinOptions { jvmTarget = '17' }
@@ -72,11 +72,13 @@ jobs:
               <uses-permission android:name="android.permission.FLASHLIGHT" />
               <uses-permission android:name="android.permission.CAMERA" />
               <uses-permission android:name="android.permission.WAKE_LOCK" />
+              <uses-permission android:name="android.permission.VIBRATE" />
               <uses-permission android:name="android.permission.REORDER_TASKS" />
               <uses-permission android:name="android.permission.KILL_BACKGROUND_PROCESSES" tools:ignore="ProtectedPermissions" />
               <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
               <uses-permission android:name="android.permission.BLUETOOTH" android:maxSdkVersion="30" />
               <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" tools:ignore="ProtectedPermissions" />
+              <uses-permission android:name="android.permission.READ_CONTACTS" />
               <application android:allowBackup="true" android:icon="@android:drawable/sym_def_app_icon" android:label="@string/app_name" android:supportsRtl="true" android:theme="@style/Theme.TechAssist">
                   <activity android:name=".MainActivity" android:exported="true">
                       <intent-filter><action android:name="android.intent.action.MAIN" /><category android:name="android.intent.category.LAUNCHER" /></intent-filter>
@@ -173,8 +175,15 @@ jobs:
           import android.graphics.PixelFormat
           import android.hardware.camera2.CameraManager
           import android.media.AudioManager
+          import android.net.Uri
+          import android.os.BatteryManager
           import android.os.Build
           import android.os.IBinder
+          import android.os.Vibrator
+          import android.provider.AlarmClock
+          import android.provider.CalendarContract
+          import android.provider.ContactsContract
+          import android.provider.MediaStore
           import android.provider.Settings
           import android.view.Gravity
           import android.view.LayoutInflater
@@ -187,6 +196,10 @@ jobs:
           import android.widget.Switch
           import android.widget.TextView
           import android.widget.Toast
+          import java.text.SimpleDateFormat
+          import java.util.Date
+          import java.util.Locale
+          import kotlin.math.abs
           import kotlin.math.roundToInt
 
           class AssistService : Service() {
@@ -196,7 +209,6 @@ jobs:
               private lateinit var params: WindowManager.LayoutParams
               private lateinit var mainPanel: LinearLayout
               private lateinit var miniIcon: TextView
-              private lateinit var sliderContainer: LinearLayout
               private lateinit var tvBrightness: TextView
               private lateinit var tvVolume: TextView
               private lateinit var sbBrightness: SeekBar
@@ -204,28 +216,17 @@ jobs:
               private lateinit var btnMute: Button
               private lateinit var btnStreamSwitch: Button
               private lateinit var switchAuto: Switch
-              private lateinit var btnWeChat: Button
-              private lateinit var btnCamera: Button
-              private lateinit var btnFlashlight: Button
-              private lateinit var btnKeepScreenOn: Button
-              private lateinit var btnHome: Button
-              private lateinit var btnNight: Button
-              private lateinit var btnOrientation: Button
-              private lateinit var btnWifi: Button
-              private lateinit var btnBluetooth: Button
-              private lateinit var btnAirplane: Button
-              private lateinit var btnBattery: Button
-              private lateinit var btnPerm: Button
-              private lateinit var btnClipboard: Button
-              private lateinit var btnSleep: Button
-              private lateinit var btnBack: Button
-              private lateinit var btnRecents: Button
-              private lateinit var btnTimeout: Button
-              private lateinit var btnLocation: Button
-              private lateinit var btnDev: Button
-              private lateinit var btnMaxBrightness: Button
-              private lateinit var btnMinBrightness: Button
               private lateinit var colorDots: LinearLayout
+              private lateinit var tabBasic: View
+              private lateinit var tabSystem: View
+              private lateinit var tabQuick: View
+              private lateinit var tabJump: View
+              private lateinit var tabAppear: View
+              private lateinit var tab1: TextView
+              private lateinit var tab2: TextView
+              private lateinit var tab3: TextView
+              private lateinit var tab4: TextView
+              private lateinit var tab5: TextView
 
               private var currentStream = AudioManager.STREAM_MUSIC
               private var isMuted = false
@@ -234,7 +235,6 @@ jobs:
               private var isFlashlightOn = false
               private var isKeepScreenOn = false
               private var isNightMode = false
-              private var orientationIndex = 0
               private var cameraManager: CameraManager? = null
               private var cameraId: String? = null
               private var normalBrightness = 0.6f
@@ -282,7 +282,6 @@ jobs:
 
                   mainPanel = panel.findViewById(R.id.mainPanel)
                   miniIcon = panel.findViewById(R.id.miniIcon)
-                  sliderContainer = panel.findViewById(R.id.sliderContainer)
                   tvBrightness = panel.findViewById(R.id.tvBrightnessValue)
                   tvVolume = panel.findViewById(R.id.tvVolumeValue)
                   sbBrightness = panel.findViewById(R.id.sbBrightness)
@@ -290,28 +289,17 @@ jobs:
                   btnMute = panel.findViewById(R.id.btnMute)
                   btnStreamSwitch = panel.findViewById(R.id.btnStreamSwitch)
                   switchAuto = panel.findViewById(R.id.switchAutoBrightness)
-                  btnWeChat = panel.findViewById(R.id.btnWeChat)
-                  btnCamera = panel.findViewById(R.id.btnCamera)
-                  btnFlashlight = panel.findViewById(R.id.btnFlashlight)
-                  btnKeepScreenOn = panel.findViewById(R.id.btnKeepScreenOn)
-                  btnHome = panel.findViewById(R.id.btnHome)
-                  btnNight = panel.findViewById(R.id.btnNight)
-                  btnOrientation = panel.findViewById(R.id.btnOrientation)
-                  btnWifi = panel.findViewById(R.id.btnWifi)
-                  btnBluetooth = panel.findViewById(R.id.btnBluetooth)
-                  btnAirplane = panel.findViewById(R.id.btnAirplane)
-                  btnBattery = panel.findViewById(R.id.btnBattery)
-                  btnPerm = panel.findViewById(R.id.btnPerm)
-                  btnClipboard = panel.findViewById(R.id.btnClipboard)
-                  btnSleep = panel.findViewById(R.id.btnSleep)
-                  btnBack = panel.findViewById(R.id.btnBack)
-                  btnRecents = panel.findViewById(R.id.btnRecents)
-                  btnTimeout = panel.findViewById(R.id.btnTimeout)
-                  btnLocation = panel.findViewById(R.id.btnLocation)
-                  btnDev = panel.findViewById(R.id.btnDev)
-                  btnMaxBrightness = panel.findViewById(R.id.btnMaxBrightness)
-                  btnMinBrightness = panel.findViewById(R.id.btnMinBrightness)
                   colorDots = panel.findViewById(R.id.colorDots)
+                  tabBasic = panel.findViewById(R.id.tabBasic)
+                  tabSystem = panel.findViewById(R.id.tabSystem)
+                  tabQuick = panel.findViewById(R.id.tabQuick)
+                  tabJump = panel.findViewById(R.id.tabJump)
+                  tabAppear = panel.findViewById(R.id.tabAppear)
+                  tab1 = panel.findViewById(R.id.tab1)
+                  tab2 = panel.findViewById(R.id.tab2)
+                  tab3 = panel.findViewById(R.id.tab3)
+                  tab4 = panel.findViewById(R.id.tab4)
+                  tab5 = panel.findViewById(R.id.tab5)
 
                   setupDrag(panel.findViewById(R.id.dragHandle))
                   setupMiniDrag(miniIcon)
@@ -321,35 +309,54 @@ jobs:
                   setupButtons()
                   setupAlphaSlider()
                   setupColorDots()
+                  setupTabs()
 
                   panel.findViewById<View>(R.id.btnClose).setOnClickListener { stopSelf() }
                   panel.findViewById<View>(R.id.btnMinimize).setOnClickListener { minimize() }
-                  miniIcon.setOnClickListener { restore() }
-                  panel.findViewById<View>(R.id.btnHide).setOnClickListener { toggleHideButtons() }
+                  panel.findViewById<View>(R.id.btnHide).setOnClickListener { toggleHide() }
+              }
+
+              private fun setupTabs() {
+                  tab1.setOnClickListener { switchTab(0) }
+                  tab2.setOnClickListener { switchTab(1) }
+                  tab3.setOnClickListener { switchTab(2) }
+                  tab4.setOnClickListener { switchTab(3) }
+                  tab5.setOnClickListener { switchTab(4) }
+                  switchTab(0)
+              }
+
+              private fun switchTab(index: Int) {
+                  tabBasic.visibility = if (index == 0) View.VISIBLE else View.GONE
+                  tabSystem.visibility = if (index == 1) View.VISIBLE else View.GONE
+                  tabQuick.visibility = if (index == 2) View.VISIBLE else View.GONE
+                  tabJump.visibility = if (index == 3) View.VISIBLE else View.GONE
+                  tabAppear.visibility = if (index == 4) View.VISIBLE else View.GONE
+                  tab1.setBackgroundColor(if (index == 0) 0xFF22D3EE.toInt() else 0x00000000)
+                  tab2.setBackgroundColor(if (index == 1) 0xFF22D3EE.toInt() else 0x00000000)
+                  tab3.setBackgroundColor(if (index == 2) 0xFF22D3EE.toInt() else 0x00000000)
+                  tab4.setBackgroundColor(if (index == 3) 0xFF22D3EE.toInt() else 0x00000000)
+                  tab5.setBackgroundColor(if (index == 4) 0xFF22D3EE.toInt() else 0x00000000)
+                  tab1.setTextColor(if (index == 0) 0xFF0A1526.toInt() else 0xFF9FD8EA.toInt())
+                  tab2.setTextColor(if (index == 1) 0xFF0A1526.toInt() else 0xFF9FD8EA.toInt())
+                  tab3.setTextColor(if (index == 2) 0xFF0A1526.toInt() else 0xFF9FD8EA.toInt())
+                  tab4.setTextColor(if (index == 3) 0xFF0A1526.toInt() else 0xFF9FD8EA.toInt())
+                  tab5.setTextColor(if (index == 4) 0xFF0A1526.toInt() else 0xFF9FD8EA.toInt())
+              }
+
+              private fun toggleHide() {
+                  val v = tabBasic.visibility
+                  val newVis = if (v == View.GONE) View.VISIBLE else View.GONE
+                  tabBasic.visibility = newVis
+                  tabSystem.visibility = newVis
+                  tabQuick.visibility = newVis
+                  tabJump.visibility = newVis
+                  tabAppear.visibility = newVis
               }
 
               private fun setupColorDots() {
                   colorDots.removeAllViews()
-                  val ids = intArrayOf(
-                      R.drawable.bg_panel,
-                      R.drawable.bg_panel_blue,
-                      R.drawable.bg_panel_purple,
-                      R.drawable.bg_panel_green,
-                      R.drawable.bg_panel_red,
-                      R.drawable.bg_panel_orange,
-                      R.drawable.bg_panel_pink,
-                      R.drawable.bg_panel_gray
-                  )
-                  val colors = intArrayOf(
-                      0xFF22D3EE.toInt(),
-                      0xFF3B82F6.toInt(),
-                      0xFFA855F7.toInt(),
-                      0xFF10B981.toInt(),
-                      0xFFEF4444.toInt(),
-                      0xFFF97316.toInt(),
-                      0xFFEC4899.toInt(),
-                      0xFF64748B.toInt()
-                  )
+                  val ids = intArrayOf(R.drawable.bg_panel, R.drawable.bg_panel_blue, R.drawable.bg_panel_purple, R.drawable.bg_panel_green, R.drawable.bg_panel_red, R.drawable.bg_panel_orange, R.drawable.bg_panel_pink, R.drawable.bg_panel_gray)
+                  val colors = intArrayOf(0xFF22D3EE.toInt(), 0xFF3B82F6.toInt(), 0xFFA855F7.toInt(), 0xFF10B981.toInt(), 0xFFEF4444.toInt(), 0xFFF97316.toInt(), 0xFFEC4899.toInt(), 0xFF64748B.toInt())
                   var i = 0
                   while (i < ids.size) {
                       val dot = View(this)
@@ -357,37 +364,25 @@ jobs:
                       lp.marginEnd = dp(6)
                       dot.layoutParams = lp
                       dot.setBackgroundColor(colors[i])
-                      val drawableId = ids[i]
-                      dot.setOnClickListener {
-                          mainPanel.setBackgroundResource(drawableId)
-                          Toast.makeText(this@AssistService, "已切换主题", Toast.LENGTH_SHORT).show()
-                      }
+                      val did = ids[i]
+                      dot.setOnClickListener { mainPanel.setBackgroundResource(did) }
                       colorDots.addView(dot)
                       i++
                   }
               }
 
               private fun setupMiniDrag(handle: View) {
-                  var startX = 0
-                  var startY = 0
-                  var downX = 0f
-                  var downY = 0f
+                  var startX = 0; var startY = 0; var downX = 0f; var downY = 0f; var moved = false
                   handle.setOnTouchListener { _, event ->
                       when (event.action) {
-                          MotionEvent.ACTION_DOWN -> {
-                              startX = params.x
-                              startY = params.y
-                              downX = event.rawX
-                              downY = event.rawY
-                              true
-                          }
+                          MotionEvent.ACTION_DOWN -> { startX = params.x; startY = params.y; downX = event.rawX; downY = event.rawY; moved = false; true }
                           MotionEvent.ACTION_MOVE -> {
-                              params.x = startX + (event.rawX - downX).toInt()
-                              params.y = startY + (event.rawY - downY).toInt()
-                              windowManager.updateViewLayout(panel, params)
-                              true
+                              val dx = event.rawX - downX; val dy = event.rawY - downY
+                              if (abs(dx) > 10 || abs(dy) > 10) moved = true
+                              params.x = startX + dx.toInt(); params.y = startY + dy.toInt()
+                              windowManager.updateViewLayout(panel, params); true
                           }
-                          MotionEvent.ACTION_UP -> { snapToEdge(); false }
+                          MotionEvent.ACTION_UP -> { if (!moved) restore() else snapToEdge(); false }
                           else -> false
                       }
                   }
@@ -416,20 +411,12 @@ jobs:
                   windowManager.updateViewLayout(panel, params)
               }
 
-              private fun toggleHideButtons() {
-                  sliderContainer.visibility = if (sliderContainer.visibility == View.GONE) View.VISIBLE else View.GONE
-              }
-
               private fun setupAlphaSlider() {
                   val sbAlpha = panel.findViewById<SeekBar>(R.id.sbAlpha)
                   sbAlpha.progress = (currentAlpha * 100).toInt()
                   sbAlpha.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
                       override fun onProgressChanged(seekBar: SeekBar?, progress: Int, fromUser: Boolean) {
-                          if (fromUser) {
-                              currentAlpha = (progress.coerceIn(20, 100)) / 100f
-                              params.alpha = currentAlpha
-                              windowManager.updateViewLayout(panel, params)
-                          }
+                          if (fromUser) { currentAlpha = (progress.coerceIn(20, 100)) / 100f; params.alpha = currentAlpha; windowManager.updateViewLayout(panel, params) }
                       }
                       override fun onStartTrackingTouch(seekBar: SeekBar?) {}
                       override fun onStopTrackingTouch(seekBar: SeekBar?) {}
@@ -448,35 +435,79 @@ jobs:
                       btnStreamSwitch.text = if (currentStream == AudioManager.STREAM_MUSIC) "媒体" else "铃声"
                       updateVolumeSlider()
                   }
-                  btnWeChat.setOnClickListener { launchApp("com.tencent.mm") }
-                  btnCamera.setOnClickListener { launchApp("com.android.camera") }
-                  btnFlashlight.setOnClickListener { toggleFlashlight() }
-                  btnKeepScreenOn.setOnClickListener { toggleKeepScreenOn() }
-                  btnHome.setOnClickListener { goHome() }
-                  btnNight.setOnClickListener { toggleNightMode() }
-                  btnOrientation.setOnClickListener { cycleOrientation() }
-                  btnWifi.setOnClickListener { openSetting(Settings.ACTION_WIFI_SETTINGS) }
-                  btnBluetooth.setOnClickListener { openSetting(Settings.ACTION_BLUETOOTH_SETTINGS) }
-                  btnAirplane.setOnClickListener { openSetting(Settings.ACTION_AIRPLANE_MODE_SETTINGS) }
-                  btnBattery.setOnClickListener { openSetting(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS) }
-                  btnPerm.setOnClickListener { openSetting(Settings.ACTION_APPLICATION_DETAILS_SETTINGS) }
-                  btnClipboard.setOnClickListener { showClipboard() }
-                  btnSleep.setOnClickListener { Toast.makeText(this, "请按电源键息屏", Toast.LENGTH_SHORT).show() }
-                  btnBack.setOnClickListener { Toast.makeText(this, "返回需无障碍权限", Toast.LENGTH_SHORT).show() }
-                  btnRecents.setOnClickListener { goHome() }
-                  btnTimeout.setOnClickListener { openSetting(Settings.ACTION_DISPLAY_SETTINGS) }
-                  btnLocation.setOnClickListener { openSetting(Settings.ACTION_LOCATION_SOURCE_SETTINGS) }
-                  btnDev.setOnClickListener { openSetting(Settings.ACTION_APPLICATION_DEVELOPMENT_SETTINGS) }
-                  btnMaxBrightness.setOnClickListener { sbBrightness.progress = 100; applyBrightness(100) }
-                  btnMinBrightness.setOnClickListener { sbBrightness.progress = 1; applyBrightness(1) }
+                  // 基础 Tab 新增
+                  panel.findViewById<View>(R.id.btnBrightAuto).setOnClickListener { sbBrightness.progress = 0; switchAuto.isChecked = true }
+                  panel.findViewById<View>(R.id.btnBright50).setOnClickListener { sbBrightness.progress = 50; applyBrightness(50) }
+                  panel.findViewById<View>(R.id.btnVol0).setOnClickListener { sbVolume.progress = 0; applyVolume(0) }
+                  panel.findViewById<View>(R.id.btnVol100).setOnClickListener { sbVolume.progress = 100; applyVolume(100) }
+                  // 系统 Tab 新增
+                  panel.findViewById<View>(R.id.btnCopyTime).setOnClickListener { copyTime() }
+                  panel.findViewById<View>(R.id.btnBatteryInfo).setOnClickListener { showBattery() }
+                  panel.findViewById<View>(R.id.btnTimeInfo).setOnClickListener { showTime() }
+                  panel.findViewById<View>(R.id.btnOpenSettings).setOnClickListener { openSetting(Settings.ACTION_SETTINGS) }
+                  // 快捷 Tab 新增
+                  panel.findViewById<View>(R.id.btnContacts).setOnClickListener { openContacts() }
+                  panel.findViewById<View>(R.id.btnGallery).setOnClickListener { openGallery() }
+                  panel.findViewById<View>(R.id.btnClock).setOnClickListener { launchApp("com.android.deskclock") }
+                  panel.findViewById<View>(R.id.btnFileManager).setOnClickListener { launchApp("com.android.documentsui") }
+                  // 跳转 Tab 新增
+                  panel.findViewById<View>(R.id.btnLanguage).setOnClickListener { openSetting(Settings.ACTION_LOCALE_SETTINGS) }
+                  panel.findViewById<View>(R.id.btnAccount).setOnClickListener { openSetting(Settings.ACTION_SYNC_SETTINGS) }
+                  panel.findViewById<View>(R.id.btnSoundSettings).setOnClickListener { openSetting(Settings.ACTION_SOUND_SETTINGS) }
+
+                  // 基础旧功能
+                  panel.findViewById<View>(R.id.btnBrightMinus).setOnClickListener { changeBrightness(-5) }
+                  panel.findViewById<View>(R.id.btnBrightPlus).setOnClickListener { changeBrightness(5) }
+                  panel.findViewById<View>(R.id.btnVolMinus).setOnClickListener { changeVolume(-5) }
+                  panel.findViewById<View>(R.id.btnVolPlus).setOnClickListener { changeVolume(5) }
+                  // 系统旧功能
+                  panel.findViewById<View>(R.id.btnFlashlight).setOnClickListener { toggleFlashlight() }
+                  panel.findViewById<View>(R.id.btnKeepScreenOn).setOnClickListener { toggleKeepScreenOn() }
+                  panel.findViewById<View>(R.id.btnNight).setOnClickListener { toggleNightMode() }
+                  panel.findViewById<View>(R.id.btnHome).setOnClickListener { goHome() }
+                  panel.findViewById<View>(R.id.btnSleep).setOnClickListener { Toast.makeText(this, "请按电源键息屏", Toast.LENGTH_SHORT).show() }
+                  panel.findViewById<View>(R.id.btnMaxBrightness).setOnClickListener { sbBrightness.progress = 100; applyBrightness(100) }
+                  panel.findViewById<View>(R.id.btnMinBrightness).setOnClickListener { sbBrightness.progress = 1; applyBrightness(1) }
+                  panel.findViewById<View>(R.id.btnRingerMode).setOnClickListener { cycleRingerMode() }
+                  panel.findViewById<View>(R.id.btnClearClip).setOnClickListener { clearClipboard() }
+                  panel.findViewById<View>(R.id.btnCopyDevice).setOnClickListener { copyDeviceInfo() }
+                  panel.findViewById<View>(R.id.btnVibrate).setOnClickListener { vibrate() }
+                  // 快捷旧功能
+                  panel.findViewById<View>(R.id.btnWeChat).setOnClickListener { launchApp("com.tencent.mm") }
+                  panel.findViewById<View>(R.id.btnQQ).setOnClickListener { launchApp("com.tencent.mobileqq") }
+                  panel.findViewById<View>(R.id.btnAlipay).setOnClickListener { launchApp("com.eg.android.AlipayGphone") }
+                  panel.findViewById<View>(R.id.btnDouyin).setOnClickListener { launchApp("com.ss.android.ugc.aweme") }
+                  panel.findViewById<View>(R.id.btnCamera).setOnClickListener { launchApp("com.android.camera") }
+                  panel.findViewById<View>(R.id.btnPhone).setOnClickListener { dialPhone() }
+                  panel.findViewById<View>(R.id.btnSms).setOnClickListener { openSms() }
+                  panel.findViewById<View>(R.id.btnCalculator).setOnClickListener { launchApp("com.android.calculator2") }
+                  panel.findViewById<View>(R.id.btnCalendar).setOnClickListener { openCalendar() }
+                  panel.findViewById<View>(R.id.btnMusic).setOnClickListener { launchApp("com.android.music") }
+                  panel.findViewById<View>(R.id.btnAlarm).setOnClickListener { openAlarm() }
+                  panel.findViewById<View>(R.id.btnEmail).setOnClickListener { launchApp("com.android.email") }
+                  panel.findViewById<View>(R.id.btnMarket).setOnClickListener { openMarket() }
+                  panel.findViewById<View>(R.id.btnBrowser).setOnClickListener { openBrowser() }
+                  // 跳转旧功能
+                  panel.findViewById<View>(R.id.btnWifi).setOnClickListener { openSetting(Settings.ACTION_WIFI_SETTINGS) }
+                  panel.findViewById<View>(R.id.btnBluetooth).setOnClickListener { openSetting(Settings.ACTION_BLUETOOTH_SETTINGS) }
+                  panel.findViewById<View>(R.id.btnAirplane).setOnClickListener { openSetting(Settings.ACTION_AIRPLANE_MODE_SETTINGS) }
+                  panel.findViewById<View>(R.id.btnBattery).setOnClickListener { openSetting(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS) }
+                  panel.findViewById<View>(R.id.btnPerm).setOnClickListener { openSetting(Settings.ACTION_APPLICATION_DETAILS_SETTINGS) }
+                  panel.findViewById<View>(R.id.btnLocation).setOnClickListener { openSetting(Settings.ACTION_LOCATION_SOURCE_SETTINGS) }
+                  panel.findViewById<View>(R.id.btnDev).setOnClickListener { openSetting(Settings.ACTION_APPLICATION_DEVELOPMENT_SETTINGS) }
+                  panel.findViewById<View>(R.id.btnStorage).setOnClickListener { openSetting(Settings.ACTION_INTERNAL_STORAGE_SETTINGS) }
+                  panel.findViewById<View>(R.id.btnAccessibility).setOnClickListener { openSetting(Settings.ACTION_ACCESSIBILITY_SETTINGS) }
+                  panel.findViewById<View>(R.id.btnInputMethod).setOnClickListener { openSetting(Settings.ACTION_INPUT_METHOD_SETTINGS) }
+                  panel.findViewById<View>(R.id.btnNotification).setOnClickListener { openSetting("android.settings.APP_NOTIFICATION_SETTINGS") }
+                  panel.findViewById<View>(R.id.btnDateTime).setOnClickListener { openSetting(Settings.ACTION_DATE_SETTINGS) }
+                  // 外观 Tab 旧功能
+                  panel.findViewById<View>(R.id.btnClipboard).setOnClickListener { showClipboard() }
 
                   switchAuto.setOnCheckedChangeListener { _, isChecked ->
                       try {
                           Settings.System.putInt(contentResolver, Settings.System.SCREEN_BRIGHTNESS_MODE, if (isChecked) Settings.System.SCREEN_BRIGHTNESS_MODE_AUTOMATIC else Settings.System.SCREEN_BRIGHTNESS_MODE_MANUAL)
                           sbBrightness.isEnabled = !isChecked
-                      } catch (e: Exception) {
-                          switchAuto.isChecked = !isChecked
-                      }
+                      } catch (e: Exception) { switchAuto.isChecked = !isChecked }
                   }
                   try {
                       val mode = Settings.System.getInt(contentResolver, Settings.System.SCREEN_BRIGHTNESS_MODE)
@@ -485,39 +516,118 @@ jobs:
                   } catch (e: Exception) {}
               }
 
+              private fun copyTime() {
+                  try {
+                      val time = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault()).format(Date())
+                      val cm = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                      cm.setPrimaryClip(ClipData.newPlainText("time", time))
+                      Toast.makeText(this, "已复制: $time", Toast.LENGTH_SHORT).show()
+                  } catch (e: Exception) { Toast.makeText(this, "复制失败", Toast.LENGTH_SHORT).show() }
+              }
+
+              private fun showBattery() {
+                  try {
+                      val bm = getSystemService(Context.BATTERY_SERVICE) as BatteryManager
+                      val level = bm.getIntProperty(BatteryManager.BATTERY_PROPERTY_CAPACITY)
+                      Toast.makeText(this, "电池电量: $level%", Toast.LENGTH_SHORT).show()
+                  } catch (e: Exception) { Toast.makeText(this, "读取失败", Toast.LENGTH_SHORT).show() }
+              }
+
+              private fun showTime() {
+                  val time = SimpleDateFormat("HH:mm:ss", Locale.getDefault()).format(Date())
+                  Toast.makeText(this, "当前时间: $time", Toast.LENGTH_SHORT).show()
+              }
+
+              private fun openContacts() {
+                  try {
+                      val intent = Intent(Intent.ACTION_VIEW).apply { data = ContactsContract.Contacts.CONTENT_URI; flags = Intent.FLAG_ACTIVITY_NEW_TASK }
+                      startActivity(intent)
+                  } catch (e: Exception) { Toast.makeText(this, "通讯录失败", Toast.LENGTH_SHORT).show() }
+              }
+
+              private fun openGallery() {
+                  try {
+                      val intent = Intent(Intent.ACTION_VIEW).apply { type = "image/*"; flags = Intent.FLAG_ACTIVITY_NEW_TASK }
+                      startActivity(intent)
+                  } catch (e: Exception) { Toast.makeText(this, "图库失败", Toast.LENGTH_SHORT).show() }
+              }
+
+              private fun changeBrightness(delta: Int) {
+                  val newVal = (sbBrightness.progress + delta).coerceIn(1, 100)
+                  sbBrightness.progress = newVal
+                  applyBrightness(newVal)
+              }
+
+              private fun changeVolume(delta: Int) {
+                  val newVal = (sbVolume.progress + delta).coerceIn(0, 100)
+                  sbVolume.progress = newVal
+                  applyVolume(newVal)
+              }
+
+              private fun cycleRingerMode() {
+                  try {
+                      val current = audioManager.ringerMode
+                      val next = when (current) {
+                          AudioManager.RINGER_MODE_SILENT -> AudioManager.RINGER_MODE_VIBRATE
+                          AudioManager.RINGER_MODE_VIBRATE -> AudioManager.RINGER_MODE_NORMAL
+                          else -> AudioManager.RINGER_MODE_SILENT
+                      }
+                      audioManager.ringerMode = next
+                      val name = when (next) {
+                          AudioManager.RINGER_MODE_SILENT -> "静音"
+                          AudioManager.RINGER_MODE_VIBRATE -> "震动"
+                          else -> "响铃"
+                      }
+                      Toast.makeText(this, "模式: $name", Toast.LENGTH_SHORT).show()
+                  } catch (e: Exception) { Toast.makeText(this, "切换失败", Toast.LENGTH_SHORT).show() }
+              }
+
+              private fun clearClipboard() {
+                  try {
+                      val cm = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                      cm.setPrimaryClip(ClipData.newPlainText("", ""))
+                      Toast.makeText(this, "剪贴板已清空", Toast.LENGTH_SHORT).show()
+                  } catch (e: Exception) { Toast.makeText(this, "清空失败", Toast.LENGTH_SHORT).show() }
+              }
+
+              private fun copyDeviceInfo() {
+                  try {
+                      val info = "型号: ${Build.MODEL}\n品牌: ${Build.BRAND}\nAndroid: ${Build.VERSION.RELEASE}\nSDK: ${Build.VERSION.SDK_INT}"
+                      val cm = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                      cm.setPrimaryClip(ClipData.newPlainText("device", info))
+                      Toast.makeText(this, "设备信息已复制", Toast.LENGTH_SHORT).show()
+                  } catch (e: Exception) { Toast.makeText(this, "复制失败", Toast.LENGTH_SHORT).show() }
+              }
+
+              private fun vibrate() {
+                  try {
+                      val v = getSystemService(Context.VIBRATOR_SERVICE) as Vibrator
+                      if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) v.vibrate(android.os.VibrationEffect.createOneShot(200, android.os.VibrationEffect.DEFAULT_AMPLITUDE))
+                      else @Suppress("DEPRECATION") v.vibrate(200)
+                  } catch (e: Exception) {}
+              }
+
               private fun toggleFlashlight() {
                   try {
                       val id = cameraId
-                      if (id == null) {
-                          Toast.makeText(this, "本机无闪光灯", Toast.LENGTH_SHORT).show()
-                          return
-                      }
+                      if (id == null) { Toast.makeText(this, "本机无闪光灯", Toast.LENGTH_SHORT).show(); return }
                       isFlashlightOn = !isFlashlightOn
                       cameraManager?.setTorchMode(id, isFlashlightOn)
-                      btnFlashlight.text = if (isFlashlightOn) "关灯" else "手电"
-                  } catch (e: Exception) {
-                      Toast.makeText(this, "手电筒失败", Toast.LENGTH_SHORT).show()
-                  }
+                  } catch (e: Exception) { Toast.makeText(this, "手电筒失败", Toast.LENGTH_SHORT).show() }
               }
 
               private fun toggleKeepScreenOn() {
                   isKeepScreenOn = !isKeepScreenOn
                   panel.keepScreenOn = isKeepScreenOn
                   mainPanel.keepScreenOn = isKeepScreenOn
-                  btnKeepScreenOn.text = if (isKeepScreenOn) "常亮开" else "常亮"
-                  Toast.makeText(this, if (isKeepScreenOn) "屏幕常亮已开启" else "已关闭", Toast.LENGTH_SHORT).show()
+                  Toast.makeText(this, if (isKeepScreenOn) "已开启常亮" else "已关闭常亮", Toast.LENGTH_SHORT).show()
               }
 
               private fun goHome() {
                   try {
-                      val intent = Intent(Intent.ACTION_MAIN).apply {
-                          addCategory(Intent.CATEGORY_HOME)
-                          flags = Intent.FLAG_ACTIVITY_NEW_TASK
-                      }
+                      val intent = Intent(Intent.ACTION_MAIN).apply { addCategory(Intent.CATEGORY_HOME); flags = Intent.FLAG_ACTIVITY_NEW_TASK }
                       startActivity(intent)
-                  } catch (e: Exception) {
-                      Toast.makeText(this, "回桌面失败", Toast.LENGTH_SHORT).show()
-                  }
+                  } catch (e: Exception) { Toast.makeText(this, "回桌面失败", Toast.LENGTH_SHORT).show() }
               }
 
               private fun toggleNightMode() {
@@ -525,37 +635,19 @@ jobs:
                   if (isNightMode) {
                       normalBrightness = params.screenBrightness
                       params.screenBrightness = 0.2f
-                      btnNight.text = "夜间开"
                   } else {
                       params.screenBrightness = if (normalBrightness in 0f..1f) normalBrightness else 0.6f
-                      btnNight.text = "日间"
                   }
                   try { windowManager.updateViewLayout(panel, params) } catch (e: Exception) {}
                   Toast.makeText(this, if (isNightMode) "夜间模式已开启" else "夜间模式已关闭", Toast.LENGTH_SHORT).show()
               }
 
-              private fun cycleOrientation() {
-                  orientationIndex = (orientationIndex + 1) % 3
-                  btnOrientation.text = when (orientationIndex) {
-                      0 -> "自动"
-                      1 -> "竖屏"
-                      else -> "横屏"
-                  }
-                  Toast.makeText(this, "方向切换需系统配合", Toast.LENGTH_SHORT).show()
-              }
-
               private fun openSetting(action: String) {
                   try {
-                      val intent = if (action == Settings.ACTION_APPLICATION_DETAILS_SETTINGS) {
-                          Intent(action, android.net.Uri.parse("package:$packageName"))
-                      } else {
-                          Intent(action)
-                      }
+                      val intent = if (action == Settings.ACTION_APPLICATION_DETAILS_SETTINGS) Intent(action, Uri.parse("package:$packageName")) else Intent(action)
                       intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                       startActivity(intent)
-                  } catch (e: Exception) {
-                      Toast.makeText(this, "跳转失败", Toast.LENGTH_SHORT).show()
-                  }
+                  } catch (e: Exception) { Toast.makeText(this, "跳转失败", Toast.LENGTH_SHORT).show() }
               }
 
               private fun showClipboard() {
@@ -564,23 +656,57 @@ jobs:
                       val clip: ClipData? = cm.primaryClip
                       val text = clip?.getItemAt(0)?.text?.toString() ?: "剪贴板为空"
                       Toast.makeText(this, "剪贴板: $text", Toast.LENGTH_LONG).show()
-                  } catch (e: Exception) {
-                      Toast.makeText(this, "读取失败", Toast.LENGTH_SHORT).show()
-                  }
+                  } catch (e: Exception) { Toast.makeText(this, "读取失败", Toast.LENGTH_SHORT).show() }
+              }
+
+              private fun dialPhone() {
+                  try {
+                      val intent = Intent(Intent.ACTION_DIAL).apply { flags = Intent.FLAG_ACTIVITY_NEW_TASK }
+                      startActivity(intent)
+                  } catch (e: Exception) { Toast.makeText(this, "拨号失败", Toast.LENGTH_SHORT).show() }
+              }
+
+              private fun openSms() {
+                  try {
+                      val intent = Intent(Intent.ACTION_VIEW).apply { data = Uri.parse("smsto:"); flags = Intent.FLAG_ACTIVITY_NEW_TASK }
+                      startActivity(intent)
+                  } catch (e: Exception) { Toast.makeText(this, "短信失败", Toast.LENGTH_SHORT).show() }
+              }
+
+              private fun openCalendar() {
+                  try {
+                      val intent = Intent(Intent.ACTION_VIEW).apply { data = CalendarContract.CONTENT_URI; flags = Intent.FLAG_ACTIVITY_NEW_TASK }
+                      startActivity(intent)
+                  } catch (e: Exception) { Toast.makeText(this, "日历失败", Toast.LENGTH_SHORT).show() }
+              }
+
+              private fun openAlarm() {
+                  try {
+                      val intent = Intent(AlarmClock.ACTION_SET_ALARM).apply { flags = Intent.FLAG_ACTIVITY_NEW_TASK }
+                      startActivity(intent)
+                  } catch (e: Exception) { Toast.makeText(this, "闹钟失败", Toast.LENGTH_SHORT).show() }
+              }
+
+              private fun openMarket() {
+                  try {
+                      val intent = Intent(Intent.ACTION_VIEW).apply { data = Uri.parse("market://search?q=app"); flags = Intent.FLAG_ACTIVITY_NEW_TASK }
+                      startActivity(intent)
+                  } catch (e: Exception) { Toast.makeText(this, "应用商店不可用", Toast.LENGTH_SHORT).show() }
+              }
+
+              private fun openBrowser() {
+                  try {
+                      val intent = Intent(Intent.ACTION_VIEW).apply { data = Uri.parse("https://www.baidu.com"); flags = Intent.FLAG_ACTIVITY_NEW_TASK }
+                      startActivity(intent)
+                  } catch (e: Exception) { Toast.makeText(this, "浏览器失败", Toast.LENGTH_SHORT).show() }
               }
 
               private fun launchApp(pkg: String) {
                   try {
                       val intent = packageManager.getLaunchIntentForPackage(pkg)
-                      if (intent != null) {
-                          intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                          startActivity(intent)
-                      } else {
-                          Toast.makeText(this, "未安装该应用", Toast.LENGTH_SHORT).show()
-                      }
-                  } catch (e: Exception) {
-                      Toast.makeText(this, "启动失败", Toast.LENGTH_SHORT).show()
-                  }
+                      if (intent != null) { intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK); startActivity(intent) }
+                      else Toast.makeText(this, "未安装该应用", Toast.LENGTH_SHORT).show()
+                  } catch (e: Exception) { Toast.makeText(this, "启动失败", Toast.LENGTH_SHORT).show() }
               }
 
               private fun updateVolumeSlider() {
@@ -592,25 +718,11 @@ jobs:
               }
 
               private fun setupDrag(handle: View) {
-                  var startX = 0
-                  var startY = 0
-                  var downX = 0f
-                  var downY = 0f
+                  var startX = 0; var startY = 0; var downX = 0f; var downY = 0f
                   handle.setOnTouchListener { _, event ->
                       when (event.action) {
-                          MotionEvent.ACTION_DOWN -> {
-                              startX = params.x
-                              startY = params.y
-                              downX = event.rawX
-                              downY = event.rawY
-                              true
-                          }
-                          MotionEvent.ACTION_MOVE -> {
-                              params.x = startX + (event.rawX - downX).toInt()
-                              params.y = startY + (event.rawY - downY).toInt()
-                              windowManager.updateViewLayout(panel, params)
-                              true
-                          }
+                          MotionEvent.ACTION_DOWN -> { startX = params.x; startY = params.y; downX = event.rawX; downY = event.rawY; true }
+                          MotionEvent.ACTION_MOVE -> { params.x = startX + (event.rawX - downX).toInt(); params.y = startY + (event.rawY - downY).toInt(); windowManager.updateViewLayout(panel, params); true }
                           MotionEvent.ACTION_UP -> { snapToEdge(); false }
                           else -> false
                       }
@@ -618,15 +730,10 @@ jobs:
               }
 
               private fun setupResizeHandle(handle: View) {
-                  var startWidth = 0
-                  var downX = 0f
+                  var startWidth = 0; var downX = 0f
                   handle.setOnTouchListener { _, event ->
                       when (event.action) {
-                          MotionEvent.ACTION_DOWN -> {
-                              startWidth = panelWidthPx
-                              downX = event.rawX
-                              true
-                          }
+                          MotionEvent.ACTION_DOWN -> { startWidth = panelWidthPx; downX = event.rawX; true }
                           MotionEvent.ACTION_MOVE -> {
                               val deltaX = event.rawX - downX
                               val screenWidth = resources.displayMetrics.widthPixels
@@ -662,10 +769,7 @@ jobs:
                       Settings.System.putInt(contentResolver, Settings.System.SCREEN_BRIGHTNESS_MODE, Settings.System.SCREEN_BRIGHTNESS_MODE_MANUAL)
                       Settings.System.putInt(contentResolver, Settings.System.SCREEN_BRIGHTNESS, value)
                   } catch (e: Exception) {}
-                  try {
-                      params.screenBrightness = value / 255f
-                      windowManager.updateViewLayout(panel, params)
-                  } catch (e: Exception) {}
+                  try { params.screenBrightness = value / 255f; windowManager.updateViewLayout(panel, params) } catch (e: Exception) {}
               }
 
               private fun currentBrightnessPercent(): Int {
@@ -673,9 +777,7 @@ jobs:
                   return try {
                       val v = Settings.System.getInt(contentResolver, Settings.System.SCREEN_BRIGHTNESS, 128)
                       (v * 100f / 255f).roundToInt().coerceIn(1, 100)
-                  } catch (e: Exception) {
-                      50
-                  }
+                  } catch (e: Exception) { 50 }
               }
 
               private fun setupVolume() {
@@ -705,9 +807,7 @@ jobs:
                       audioManager.setStreamVolume(currentStream, target, AudioManager.FLAG_SHOW_UI)
                       isMuted = target == 0
                       btnMute.text = if (isMuted) "已静音" else "正常"
-                  } catch (e: Exception) {
-                      Toast.makeText(this, "音量调节失败", Toast.LENGTH_SHORT).show()
-                  }
+                  } catch (e: Exception) { Toast.makeText(this, "音量调节失败", Toast.LENGTH_SHORT).show() }
               }
 
               override fun onConfigurationChanged(newConfig: Configuration) {
@@ -737,7 +837,7 @@ jobs:
           <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android" android:layout_width="match_parent" android:layout_height="match_parent" android:background="#FFFFFFFF" android:gravity="center" android:orientation="vertical" android:paddingStart="40dp" android:paddingEnd="40dp">
               <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:letterSpacing="0.3" android:text="TECH ASSIST" android:textColor="#0F172A" android:textSize="26sp" android:textStyle="bold" />
               <View android:layout_width="90dp" android:layout_height="2dp" android:layout_marginTop="14dp" android:background="@drawable/line_gradient" />
-              <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:layout_marginTop="12dp" android:letterSpacing="0.08" android:text="超级控制台 · 20+ 功能" android:textColor="#94A3B8" android:textSize="13sp" />
+              <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:layout_marginTop="12dp" android:letterSpacing="0.08" android:text="分区控制台 · 60+ 功能" android:textColor="#94A3B8" android:textSize="13sp" />
               <Button android:id="@+id/btnStart" android:layout_width="match_parent" android:layout_height="56dp" android:layout_marginTop="60dp" android:background="@drawable/bg_btn_primary" android:letterSpacing="0.2" android:stateListAnimator="@null" android:text="启 动 辅 助" android:textColor="#FFFFFF" android:textSize="16sp" />
               <Button android:id="@+id/btnExit" android:layout_width="match_parent" android:layout_height="56dp" android:layout_marginTop="18dp" android:background="@drawable/bg_btn_exit" android:letterSpacing="0.2" android:stateListAnimator="@null" android:text="退 出 软 件" android:textColor="#0EA5E9" android:textSize="16sp" />
           </LinearLayout>
@@ -746,94 +846,158 @@ jobs:
           cat << 'EOF' > app/src/main/res/layout/window_assist.xml
           <?xml version="1.0" encoding="utf-8"?>
           <FrameLayout xmlns:android="http://schemas.android.com/apk/res/android" android:layout_width="wrap_content" android:layout_height="wrap_content">
-              <LinearLayout android:id="@+id/mainPanel" android:layout_width="match_parent" android:layout_height="wrap_content" android:background="@drawable/bg_panel" android:orientation="vertical" android:paddingStart="16dp" android:paddingTop="14dp" android:paddingEnd="16dp" android:paddingBottom="16dp">
+              <LinearLayout android:id="@+id/mainPanel" android:layout_width="match_parent" android:layout_height="wrap_content" android:background="@drawable/bg_panel" android:orientation="vertical" android:paddingStart="12dp" android:paddingTop="12dp" android:paddingEnd="12dp" android:paddingBottom="10dp">
                   <LinearLayout android:id="@+id/dragHandle" android:layout_width="match_parent" android:layout_height="wrap_content" android:gravity="center_vertical" android:orientation="horizontal">
                       <View android:layout_width="8dp" android:layout_height="8dp" android:background="@drawable/dot_cyan" />
-                      <TextView android:layout_width="0dp" android:layout_height="wrap_content" android:layout_marginStart="8dp" android:layout_weight="1" android:letterSpacing="0.15" android:text="ASSIST CONSOLE" android:textColor="#D6F6FF" android:textSize="13sp" android:textStyle="bold" />
-                      <TextView android:id="@+id/btnHide" android:layout_width="wrap_content" android:layout_height="wrap_content" android:paddingStart="6dp" android:paddingEnd="6dp" android:text="H" android:textColor="#67E8F9" android:textSize="13sp" />
-                      <TextView android:id="@+id/btnMinimize" android:layout_width="wrap_content" android:layout_height="wrap_content" android:paddingStart="6dp" android:paddingEnd="6dp" android:text="-" android:textColor="#67E8F9" android:textSize="15sp" />
-                      <TextView android:id="@+id/btnClose" android:layout_width="wrap_content" android:layout_height="wrap_content" android:paddingStart="6dp" android:paddingEnd="2dp" android:text="X" android:textColor="#67E8F9" android:textSize="15sp" />
+                      <TextView android:layout_width="0dp" android:layout_height="wrap_content" android:layout_marginStart="8dp" android:layout_weight="1" android:letterSpacing="0.15" android:text="ASSIST CONSOLE" android:textColor="#D6F6FF" android:textSize="12sp" android:textStyle="bold" />
+                      <TextView android:id="@+id/btnHide" android:layout_width="wrap_content" android:layout_height="wrap_content" android:paddingStart="6dp" android:paddingEnd="6dp" android:text="H" android:textColor="#67E8F9" android:textSize="12sp" />
+                      <TextView android:id="@+id/btnMinimize" android:layout_width="wrap_content" android:layout_height="wrap_content" android:paddingStart="6dp" android:paddingEnd="6dp" android:text="-" android:textColor="#67E8F9" android:textSize="14sp" />
+                      <TextView android:id="@+id/btnClose" android:layout_width="wrap_content" android:layout_height="wrap_content" android:paddingStart="6dp" android:paddingEnd="2dp" android:text="X" android:textColor="#67E8F9" android:textSize="14sp" />
                   </LinearLayout>
-                  <View android:layout_width="match_parent" android:layout_height="1dp" android:layout_marginTop="10dp" android:background="@drawable/line_divider" />
-
-                  <LinearLayout android:id="@+id/sliderContainer" android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="vertical">
-                      <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="14dp" android:gravity="center_vertical" android:orientation="horizontal">
-                          <TextView android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:letterSpacing="0.1" android:text="屏幕亮度" android:textColor="#9FD8EA" android:textSize="13sp" />
-                          <TextView android:id="@+id/tvBrightnessValue" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="50%" android:textColor="#22D3EE" android:textSize="13sp" android:textStyle="bold" />
-                      </LinearLayout>
-                      <SeekBar android:id="@+id/sbBrightness" android:layout_width="match_parent" android:layout_height="wrap_content" android:max="100" android:progressBackgroundTint="#1E3A4C" android:progressTint="#22D3EE" android:thumbTint="#7DF9FF" />
-                      <Switch android:id="@+id/switchAutoBrightness" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="4dp" android:text="自动亮度" android:textColor="#9FD8EA" android:textSize="12sp" android:thumbTint="#22D3EE" android:trackTint="#1E3A4C" />
-
-                      <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="14dp" android:gravity="center_vertical" android:orientation="horizontal">
-                          <TextView android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:letterSpacing="0.1" android:text="音量控制" android:textColor="#9FD8EA" android:textSize="13sp" />
-                          <TextView android:id="@+id/tvVolumeValue" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="50%" android:textColor="#22D3EE" android:textSize="13sp" android:textStyle="bold" />
-                      </LinearLayout>
-                      <SeekBar android:id="@+id/sbVolume" android:layout_width="match_parent" android:layout_height="wrap_content" android:max="100" android:progressBackgroundTint="#1E3A4C" android:progressTint="#22D3EE" android:thumbTint="#7DF9FF" />
-
-                      <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="12dp" android:gravity="center_vertical" android:orientation="horizontal">
-                          <Button android:id="@+id/btnMute" android:layout_width="0dp" android:layout_height="40dp" android:layout_weight="1" android:layout_marginEnd="8dp" android:text="正常" android:textSize="12sp" android:background="@drawable/bg_btn_exit" android:textColor="#0EA5E9" android:stateListAnimator="@null" />
-                          <Button android:id="@+id/btnStreamSwitch" android:layout_width="0dp" android:layout_height="40dp" android:layout_weight="1" android:text="媒体" android:textSize="12sp" android:background="@drawable/bg_btn_exit" android:textColor="#0EA5E9" android:stateListAnimator="@null" />
-                      </LinearLayout>
-
-                      <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="12dp" android:gravity="center_vertical" android:orientation="horizontal">
-                          <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="透明度" android:textColor="#9FD8EA" android:textSize="12sp" android:layout_marginEnd="8dp" />
-                          <SeekBar android:id="@+id/sbAlpha" android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:max="100" android:progress="100" android:progressBackgroundTint="#1E3A4C" android:progressTint="#22D3EE" android:thumbTint="#7DF9FF" />
-                      </LinearLayout>
-
-                      <LinearLayout android:id="@+id/colorDots" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="10dp" android:orientation="horizontal" android:gravity="center_vertical" />
-
-                      <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="10dp" android:gravity="center_vertical" android:orientation="horizontal">
-                          <Button android:id="@+id/btnMaxBrightness" android:layout_width="0dp" android:layout_height="40dp" android:layout_weight="1" android:layout_marginEnd="6dp" android:text="最亮" android:textSize="11sp" android:background="@drawable/bg_btn_exit" android:textColor="#0EA5E9" android:stateListAnimator="@null" />
-                          <Button android:id="@+id/btnMinBrightness" android:layout_width="0dp" android:layout_height="40dp" android:layout_weight="1" android:text="最暗" android:textSize="11sp" android:background="@drawable/bg_btn_exit" android:textColor="#0EA5E9" android:stateListAnimator="@null" />
-                      </LinearLayout>
-
-                      <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="6dp" android:gravity="center_vertical" android:orientation="horizontal">
-                          <Button android:id="@+id/btnFlashlight" android:layout_width="0dp" android:layout_height="40dp" android:layout_weight="1" android:layout_marginEnd="6dp" android:text="手电" android:textSize="11sp" android:background="@drawable/bg_btn_exit" android:textColor="#0EA5E9" android:stateListAnimator="@null" />
-                          <Button android:id="@+id/btnKeepScreenOn" android:layout_width="0dp" android:layout_height="40dp" android:layout_weight="1" android:text="常亮" android:textSize="11sp" android:background="@drawable/bg_btn_exit" android:textColor="#0EA5E9" android:stateListAnimator="@null" />
-                      </LinearLayout>
-
-                      <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="6dp" android:gravity="center_vertical" android:orientation="horizontal">
-                          <Button android:id="@+id/btnNight" android:layout_width="0dp" android:layout_height="40dp" android:layout_weight="1" android:layout_marginEnd="6dp" android:text="日间" android:textSize="11sp" android:background="@drawable/bg_btn_exit" android:textColor="#0EA5E9" android:stateListAnimator="@null" />
-                          <Button android:id="@+id/btnOrientation" android:layout_width="0dp" android:layout_height="40dp" android:layout_weight="1" android:text="自动" android:textSize="11sp" android:background="@drawable/bg_btn_exit" android:textColor="#0EA5E9" android:stateListAnimator="@null" />
-                      </LinearLayout>
-
-                      <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="6dp" android:gravity="center_vertical" android:orientation="horizontal">
-                          <Button android:id="@+id/btnHome" android:layout_width="0dp" android:layout_height="40dp" android:layout_weight="1" android:layout_marginEnd="6dp" android:text="桌面" android:textSize="11sp" android:background="@drawable/bg_btn_exit" android:textColor="#0EA5E9" android:stateListAnimator="@null" />
-                          <Button android:id="@+id/btnBack" android:layout_width="0dp" android:layout_height="40dp" android:layout_weight="1" android:layout_marginEnd="6dp" android:text="返回" android:textSize="11sp" android:background="@drawable/bg_btn_exit" android:textColor="#0EA5E9" android:stateListAnimator="@null" />
-                          <Button android:id="@+id/btnRecents" android:layout_width="0dp" android:layout_height="40dp" android:layout_weight="1" android:text="任务" android:textSize="11sp" android:background="@drawable/bg_btn_exit" android:textColor="#0EA5E9" android:stateListAnimator="@null" />
-                      </LinearLayout>
-
-                      <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="6dp" android:gravity="center_vertical" android:orientation="horizontal">
-                          <Button android:id="@+id/btnSleep" android:layout_width="0dp" android:layout_height="40dp" android:layout_weight="1" android:layout_marginEnd="6dp" android:text="息屏" android:textSize="11sp" android:background="@drawable/bg_btn_exit" android:textColor="#0EA5E9" android:stateListAnimator="@null" />
-                          <Button android:id="@+id/btnClipboard" android:layout_width="0dp" android:layout_height="40dp" android:layout_weight="1" android:layout_marginEnd="6dp" android:text="剪贴" android:textSize="11sp" android:background="@drawable/bg_btn_exit" android:textColor="#0EA5E9" android:stateListAnimator="@null" />
-                          <Button android:id="@+id/btnTimeout" android:layout_width="0dp" android:layout_height="40dp" android:layout_weight="1" android:text="超时" android:textSize="11sp" android:background="@drawable/bg_btn_exit" android:textColor="#0EA5E9" android:stateListAnimator="@null" />
-                      </LinearLayout>
-
-                      <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="6dp" android:gravity="center_vertical" android:orientation="horizontal">
-                          <Button android:id="@+id/btnWeChat" android:layout_width="0dp" android:layout_height="40dp" android:layout_weight="1" android:layout_marginEnd="6dp" android:text="微信" android:textSize="11sp" android:background="@drawable/bg_btn_exit" android:textColor="#0EA5E9" android:stateListAnimator="@null" />
-                          <Button android:id="@+id/btnCamera" android:layout_width="0dp" android:layout_height="40dp" android:layout_weight="1" android:text="相机" android:textSize="11sp" android:background="@drawable/bg_btn_exit" android:textColor="#0EA5E9" android:stateListAnimator="@null" />
-                      </LinearLayout>
-
-                      <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="6dp" android:gravity="center_vertical" android:orientation="horizontal">
-                          <Button android:id="@+id/btnWifi" android:layout_width="0dp" android:layout_height="40dp" android:layout_weight="1" android:layout_marginEnd="6dp" android:text="WiFi" android:textSize="11sp" android:background="@drawable/bg_btn_exit" android:textColor="#0EA5E9" android:stateListAnimator="@null" />
-                          <Button android:id="@+id/btnBluetooth" android:layout_width="0dp" android:layout_height="40dp" android:layout_weight="1" android:layout_marginEnd="6dp" android:text="蓝牙" android:textSize="11sp" android:background="@drawable/bg_btn_exit" android:textColor="#0EA5E9" android:stateListAnimator="@null" />
-                          <Button android:id="@+id/btnAirplane" android:layout_width="0dp" android:layout_height="40dp" android:layout_weight="1" android:text="飞行" android:textSize="11sp" android:background="@drawable/bg_btn_exit" android:textColor="#0EA5E9" android:stateListAnimator="@null" />
-                      </LinearLayout>
-
-                      <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="6dp" android:gravity="center_vertical" android:orientation="horizontal">
-                          <Button android:id="@+id/btnBattery" android:layout_width="0dp" android:layout_height="40dp" android:layout_weight="1" android:layout_marginEnd="6dp" android:text="电池" android:textSize="11sp" android:background="@drawable/bg_btn_exit" android:textColor="#0EA5E9" android:stateListAnimator="@null" />
-                          <Button android:id="@+id/btnPerm" android:layout_width="0dp" android:layout_height="40dp" android:layout_weight="1" android:layout_marginEnd="6dp" android:text="权限" android:textSize="11sp" android:background="@drawable/bg_btn_exit" android:textColor="#0EA5E9" android:stateListAnimator="@null" />
-                          <Button android:id="@+id/btnLocation" android:layout_width="0dp" android:layout_height="40dp" android:layout_weight="1" android:text="位置" android:textSize="11sp" android:background="@drawable/bg_btn_exit" android:textColor="#0EA5E9" android:stateListAnimator="@null" />
-                      </LinearLayout>
-
-                      <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="6dp" android:gravity="center_vertical" android:orientation="horizontal">
-                          <Button android:id="@+id/btnDev" android:layout_width="match_parent" android:layout_height="40dp" android:text="开发者选项" android:textSize="11sp" android:background="@drawable/bg_btn_exit" android:textColor="#0EA5E9" android:stateListAnimator="@null" />
-                      </LinearLayout>
+                  <View android:layout_width="match_parent" android:layout_height="1dp" android:layout_marginTop="8dp" android:background="@drawable/line_divider" />
+                  <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="8dp" android:orientation="horizontal">
+                      <TextView android:id="@+id/tab1" android:layout_width="0dp" android:layout_height="32dp" android:layout_weight="1" android:gravity="center" android:text="基础" android:textColor="#9FD8EA" android:textSize="11sp" android:textStyle="bold" />
+                      <TextView android:id="@+id/tab2" android:layout_width="0dp" android:layout_height="32dp" android:layout_weight="1" android:gravity="center" android:text="系统" android:textColor="#9FD8EA" android:textSize="11sp" android:textStyle="bold" />
+                      <TextView android:id="@+id/tab3" android:layout_width="0dp" android:layout_height="32dp" android:layout_weight="1" android:gravity="center" android:text="快捷" android:textColor="#9FD8EA" android:textSize="11sp" android:textStyle="bold" />
+                      <TextView android:id="@+id/tab4" android:layout_width="0dp" android:layout_height="32dp" android:layout_weight="1" android:gravity="center" android:text="跳转" android:textColor="#9FD8EA" android:textSize="11sp" android:textStyle="bold" />
+                      <TextView android:id="@+id/tab5" android:layout_width="0dp" android:layout_height="32dp" android:layout_weight="1" android:gravity="center" android:text="外观" android:textColor="#9FD8EA" android:textSize="11sp" android:textStyle="bold" />
                   </LinearLayout>
+                  <FrameLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="6dp">
 
-                  <View android:id="@+id/resizeHandle" android:layout_width="32dp" android:layout_height="24dp" android:layout_gravity="end" android:layout_marginTop="8dp" android:background="@drawable/bg_resize_handle" />
+                      <LinearLayout android:id="@+id/tabBasic" android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="vertical">
+                          <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:gravity="center_vertical" android:orientation="horizontal">
+                              <TextView android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:text="屏幕亮度" android:textColor="#9FD8EA" android:textSize="12sp" />
+                              <TextView android:id="@+id/tvBrightnessValue" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="50%" android:textColor="#22D3EE" android:textSize="12sp" android:textStyle="bold" />
+                          </LinearLayout>
+                          <SeekBar android:id="@+id/sbBrightness" android:layout_width="match_parent" android:layout_height="wrap_content" android:max="100" android:progressBackgroundTint="#1E3A4C" android:progressTint="#22D3EE" android:thumbTint="#7DF9FF" />
+                          <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="horizontal">
+                              <Button android:id="@+id/btnBrightAuto" android:layout_width="0dp" android:layout_height="32dp" android:layout_weight="1" android:layout_marginEnd="4dp" android:text="自动" android:textSize="10sp" android:background="@drawable/bg_btn_exit" android:textColor="#0EA5E9" android:stateListAnimator="@null" />
+                              <Button android:id="@+id/btnBright50" android:layout_width="0dp" android:layout_height="32dp" android:layout_weight="1" android:layout_marginEnd="4dp" android:text="50%" android:textSize="10sp" android:background="@drawable/bg_btn_exit" android:textColor="#0EA5E9" android:stateListAnimator="@null" />
+                              <Button android:id="@+id/btnBrightMinus" android:layout_width="0dp" android:layout_height="32dp" android:layout_weight="1" android:layout_marginEnd="4dp" android:text="-5" android:textSize="10sp" android:background="@drawable/bg_btn_exit" android:textColor="#0EA5E9" android:stateListAnimator="@null" />
+                              <Button android:id="@+id/btnBrightPlus" android:layout_width="0dp" android:layout_height="32dp" android:layout_weight="1" android:text="+5" android:textSize="10sp" android:background="@drawable/bg_btn_exit" android:textColor="#0EA5E9" android:stateListAnimator="@null" />
+                          </LinearLayout>
+                          <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="4dp" android:orientation="horizontal">
+                              <Button android:id="@+id/btnMaxBrightness" android:layout_width="0dp" android:layout_height="32dp" android:layout_weight="1" android:layout_marginEnd="4dp" android:text="最亮" android:textSize="10sp" android:background="@drawable/bg_btn_exit" android:textColor="#0EA5E9" android:stateListAnimator="@null" />
+                              <Button android:id="@+id/btnMinBrightness" android:layout_width="0dp" android:layout_height="32dp" android:layout_weight="1" android:layout_marginEnd="4dp" android:text="最暗" android:textSize="10sp" android:background="@drawable/bg_btn_exit" android:textColor="#0EA5E9" android:stateListAnimator="@null" />
+                              <Button android:id="@+id/btnNight" android:layout_width="0dp" android:layout_height="32dp" android:layout_weight="1" android:text="夜间" android:textSize="10sp" android:background="@drawable/bg_btn_exit" android:textColor="#0EA5E9" android:stateListAnimator="@null" />
+                          </LinearLayout>
+                          <Switch android:id="@+id/switchAutoBrightness" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="6dp" android:text="自动亮度" android:textColor="#9FD8EA" android:textSize="11sp" android:thumbTint="#22D3EE" android:trackTint="#1E3A4C" />
+
+                          <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="8dp" android:gravity="center_vertical" android:orientation="horizontal">
+                              <TextView android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:text="音量控制" android:textColor="#9FD8EA" android:textSize="12sp" />
+                              <TextView android:id="@+id/tvVolumeValue" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="50%" android:textColor="#22D3EE" android:textSize="12sp" android:textStyle="bold" />
+                          </LinearLayout>
+                          <SeekBar android:id="@+id/sbVolume" android:layout_width="match_parent" android:layout_height="wrap_content" android:max="100" android:progressBackgroundTint="#1E3A4C" android:progressTint="#22D3EE" android:thumbTint="#7DF9FF" />
+                          <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="horizontal">
+                              <Button android:id="@+id/btnVol0" android:layout_width="0dp" android:layout_height="32dp" android:layout_weight="1" android:layout_marginEnd="4dp" android:text="0%" android:textSize="10sp" android:background="@drawable/bg_btn_exit" android:textColor="#0EA5E9" android:stateListAnimator="@null" />
+                              <Button android:id="@+id/btnVol100" android:layout_width="0dp" android:layout_height="32dp" android:layout_weight="1" android:layout_marginEnd="4dp" android:text="100%" android:textSize="10sp" android:background="@drawable/bg_btn_exit" android:textColor="#0EA5E9" android:stateListAnimator="@null" />
+                              <Button android:id="@+id/btnVolMinus" android:layout_width="0dp" android:layout_height="32dp" android:layout_weight="1" android:layout_marginEnd="4dp" android:text="-5" android:textSize="10sp" android:background="@drawable/bg_btn_exit" android:textColor="#0EA5E9" android:stateListAnimator="@null" />
+                              <Button android:id="@+id/btnVolPlus" android:layout_width="0dp" android:layout_height="32dp" android:layout_weight="1" android:text="+5" android:textSize="10sp" android:background="@drawable/bg_btn_exit" android:textColor="#0EA5E9" android:stateListAnimator="@null" />
+                          </LinearLayout>
+                          <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="4dp" android:orientation="horizontal">
+                              <Button android:id="@+id/btnMute" android:layout_width="0dp" android:layout_height="32dp" android:layout_weight="1" android:layout_marginEnd="4dp" android:text="正常" android:textSize="10sp" android:background="@drawable/bg_btn_exit" android:textColor="#0EA5E9" android:stateListAnimator="@null" />
+                              <Button android:id="@+id/btnStreamSwitch" android:layout_width="0dp" android:layout_height="32dp" android:layout_weight="1" android:text="媒体" android:textSize="10sp" android:background="@drawable/bg_btn_exit" android:textColor="#0EA5E9" android:stateListAnimator="@null" />
+                          </LinearLayout>
+                      </LinearLayout>
+
+                      <LinearLayout android:id="@+id/tabSystem" android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="vertical" android:visibility="gone">
+                          <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="4dp" android:orientation="horizontal">
+                              <Button android:id="@+id/btnFlashlight" android:layout_width="0dp" android:layout_height="40dp" android:layout_weight="1" android:layout_marginEnd="5dp" android:text="手电" android:textSize="11sp" android:background="@drawable/bg_btn_exit" android:textColor="#0EA5E9" android:stateListAnimator="@null" />
+                              <Button android:id="@+id/btnKeepScreenOn" android:layout_width="0dp" android:layout_height="40dp" android:layout_weight="1" android:layout_marginEnd="5dp" android:text="常亮" android:textSize="11sp" android:background="@drawable/bg_btn_exit" android:textColor="#0EA5E9" android:stateListAnimator="@null" />
+                              <Button android:id="@+id/btnHome" android:layout_width="0dp" android:layout_height="40dp" android:layout_weight="1" android:text="桌面" android:textSize="11sp" android:background="@drawable/bg_btn_exit" android:textColor="#0EA5E9" android:stateListAnimator="@null" />
+                          </LinearLayout>
+                          <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="5dp" android:orientation="horizontal">
+                              <Button android:id="@+id/btnSleep" android:layout_width="0dp" android:layout_height="40dp" android:layout_weight="1" android:layout_marginEnd="5dp" android:text="息屏" android:textSize="11sp" android:background="@drawable/bg_btn_exit" android:textColor="#0EA5E9" android:stateListAnimator="@null" />
+                              <Button android:id="@+id/btnRingerMode" android:layout_width="0dp" android:layout_height="40dp" android:layout_weight="1" android:layout_marginEnd="5dp" android:text="铃声" android:textSize="11sp" android:background="@drawable/bg_btn_exit" android:textColor="#0EA5E9" android:stateListAnimator="@null" />
+                              <Button android:id="@+id/btnVibrate" android:layout_width="0dp" android:layout_height="40dp" android:layout_weight="1" android:text="震动" android:textSize="11sp" android:background="@drawable/bg_btn_exit" android:textColor="#0EA5E9" android:stateListAnimator="@null" />
+                          </LinearLayout>
+                          <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="5dp" android:orientation="horizontal">
+                              <Button android:id="@+id/btnCopyTime" android:layout_width="0dp" android:layout_height="40dp" android:layout_weight="1" android:layout_marginEnd="5dp" android:text="复制时间" android:textSize="11sp" android:background="@drawable/bg_btn_exit" android:textColor="#0EA5E9" android:stateListAnimator="@null" />
+                              <Button android:id="@+id/btnBatteryInfo" android:layout_width="0dp" android:layout_height="40dp" android:layout_weight="1" android:layout_marginEnd="5dp" android:text="电量" android:textSize="11sp" android:background="@drawable/bg_btn_exit" android:textColor="#0EA5E9" android:stateListAnimator="@null" />
+                              <Button android:id="@+id/btnTimeInfo" android:layout_width="0dp" android:layout_height="40dp" android:layout_weight="1" android:text="当前时间" android:textSize="11sp" android:background="@drawable/bg_btn_exit" android:textColor="#0EA5E9" android:stateListAnimator="@null" />
+                          </LinearLayout>
+                          <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="5dp" android:orientation="horizontal">
+                              <Button android:id="@+id/btnClearClip" android:layout_width="0dp" android:layout_height="40dp" android:layout_weight="1" android:layout_marginEnd="5dp" android:text="清剪贴" android:textSize="11sp" android:background="@drawable/bg_btn_exit" android:textColor="#0EA5E9" android:stateListAnimator="@null" />
+                              <Button android:id="@+id/btnCopyDevice" android:layout_width="0dp" android:layout_height="40dp" android:layout_weight="1" android:layout_marginEnd="5dp" android:text="设备信息" android:textSize="11sp" android:background="@drawable/bg_btn_exit" android:textColor="#0EA5E9" android:stateListAnimator="@null" />
+                              <Button android:id="@+id/btnOpenSettings" android:layout_width="0dp" android:layout_height="40dp" android:layout_weight="1" android:text="系统设置" android:textSize="11sp" android:background="@drawable/bg_btn_exit" android:textColor="#0EA5E9" android:stateListAnimator="@null" />
+                          </LinearLayout>
+                      </LinearLayout>
+
+                      <LinearLayout android:id="@+id/tabQuick" android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="vertical" android:visibility="gone">
+                          <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="4dp" android:orientation="horizontal">
+                              <Button android:id="@+id/btnWeChat" android:layout_width="0dp" android:layout_height="40dp" android:layout_weight="1" android:layout_marginEnd="5dp" android:text="微信" android:textSize="11sp" android:background="@drawable/bg_btn_exit" android:textColor="#0EA5E9" android:stateListAnimator="@null" />
+                              <Button android:id="@+id/btnQQ" android:layout_width="0dp" android:layout_height="40dp" android:layout_weight="1" android:layout_marginEnd="5dp" android:text="QQ" android:textSize="11sp" android:background="@drawable/bg_btn_exit" android:textColor="#0EA5E9" android:stateListAnimator="@null" />
+                              <Button android:id="@+id/btnAlipay" android:layout_width="0dp" android:layout_height="40dp" android:layout_weight="1" android:text="支付宝" android:textSize="11sp" android:background="@drawable/bg_btn_exit" android:textColor="#0EA5E9" android:stateListAnimator="@null" />
+                          </LinearLayout>
+                          <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="5dp" android:orientation="horizontal">
+                              <Button android:id="@+id/btnDouyin" android:layout_width="0dp" android:layout_height="40dp" android:layout_weight="1" android:layout_marginEnd="5dp" android:text="抖音" android:textSize="11sp" android:background="@drawable/bg_btn_exit" android:textColor="#0EA5E9" android:stateListAnimator="@null" />
+                              <Button android:id="@+id/btnCamera" android:layout_width="0dp" android:layout_height="40dp" android:layout_weight="1" android:layout_marginEnd="5dp" android:text="相机" android:textSize="11sp" android:background="@drawable/bg_btn_exit" android:textColor="#0EA5E9" android:stateListAnimator="@null" />
+                              <Button android:id="@+id/btnGallery" android:layout_width="0dp" android:layout_height="40dp" android:layout_weight="1" android:text="图库" android:textSize="11sp" android:background="@drawable/bg_btn_exit" android:textColor="#0EA5E9" android:stateListAnimator="@null" />
+                          </LinearLayout>
+                          <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="5dp" android:orientation="horizontal">
+                              <Button android:id="@+id/btnPhone" android:layout_width="0dp" android:layout_height="40dp" android:layout_weight="1" android:layout_marginEnd="5dp" android:text="电话" android:textSize="11sp" android:background="@drawable/bg_btn_exit" android:textColor="#0EA5E9" android:stateListAnimator="@null" />
+                              <Button android:id="@+id/btnContacts" android:layout_width="0dp" android:layout_height="40dp" android:layout_weight="1" android:layout_marginEnd="5dp" android:text="联系人" android:textSize="11sp" android:background="@drawable/bg_btn_exit" android:textColor="#0EA5E9" android:stateListAnimator="@null" />
+                              <Button android:id="@+id/btnSms" android:layout_width="0dp" android:layout_height="40dp" android:layout_weight="1" android:text="短信" android:textSize="11sp" android:background="@drawable/bg_btn_exit" android:textColor="#0EA5E9" android:stateListAnimator="@null" />
+                          </LinearLayout>
+                          <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="5dp" android:orientation="horizontal">
+                              <Button android:id="@+id/btnCalculator" android:layout_width="0dp" android:layout_height="40dp" android:layout_weight="1" android:layout_marginEnd="5dp" android:text="计算器" android:textSize="11sp" android:background="@drawable/bg_btn_exit" android:textColor="#0EA5E9" android:stateListAnimator="@null" />
+                              <Button android:id="@+id/btnCalendar" android:layout_width="0dp" android:layout_height="40dp" android:layout_weight="1" android:layout_marginEnd="5dp" android:text="日历" android:textSize="11sp" android:background="@drawable/bg_btn_exit" android:textColor="#0EA5E9" android:stateListAnimator="@null" />
+                              <Button android:id="@+id/btnClock" android:layout_width="0dp" android:layout_height="40dp" android:layout_weight="1" android:text="时钟" android:textSize="11sp" android:background="@drawable/bg_btn_exit" android:textColor="#0EA5E9" android:stateListAnimator="@null" />
+                          </LinearLayout>
+                          <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="5dp" android:orientation="horizontal">
+                              <Button android:id="@+id/btnMusic" android:layout_width="0dp" android:layout_height="40dp" android:layout_weight="1" android:layout_marginEnd="5dp" android:text="音乐" android:textSize="11sp" android:background="@drawable/bg_btn_exit" android:textColor="#0EA5E9" android:stateListAnimator="@null" />
+                              <Button android:id="@+id/btnAlarm" android:layout_width="0dp" android:layout_height="40dp" android:layout_weight="1" android:layout_marginEnd="5dp" android:text="闹钟" android:textSize="11sp" android:background="@drawable/bg_btn_exit" android:textColor="#0EA5E9" android:stateListAnimator="@null" />
+                              <Button android:id="@+id/btnFileManager" android:layout_width="0dp" android:layout_height="40dp" android:layout_weight="1" android:text="文件" android:textSize="11sp" android:background="@drawable/bg_btn_exit" android:textColor="#0EA5E9" android:stateListAnimator="@null" />
+                          </LinearLayout>
+                          <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="5dp" android:orientation="horizontal">
+                              <Button android:id="@+id/btnEmail" android:layout_width="0dp" android:layout_height="40dp" android:layout_weight="1" android:layout_marginEnd="5dp" android:text="邮件" android:textSize="11sp" android:background="@drawable/bg_btn_exit" android:textColor="#0EA5E9" android:stateListAnimator="@null" />
+                              <Button android:id="@+id/btnMarket" android:layout_width="0dp" android:layout_height="40dp" android:layout_weight="1" android:layout_marginEnd="5dp" android:text="商店" android:textSize="11sp" android:background="@drawable/bg_btn_exit" android:textColor="#0EA5E9" android:stateListAnimator="@null" />
+                              <Button android:id="@+id/btnBrowser" android:layout_width="0dp" android:layout_height="40dp" android:layout_weight="1" android:text="浏览器" android:textSize="11sp" android:background="@drawable/bg_btn_exit" android:textColor="#0EA5E9" android:stateListAnimator="@null" />
+                          </LinearLayout>
+                      </LinearLayout>
+
+                      <LinearLayout android:id="@+id/tabJump" android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="vertical" android:visibility="gone">
+                          <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="4dp" android:orientation="horizontal">
+                              <Button android:id="@+id/btnWifi" android:layout_width="0dp" android:layout_height="40dp" android:layout_weight="1" android:layout_marginEnd="5dp" android:text="WiFi" android:textSize="11sp" android:background="@drawable/bg_btn_exit" android:textColor="#0EA5E9" android:stateListAnimator="@null" />
+                              <Button android:id="@+id/btnBluetooth" android:layout_width="0dp" android:layout_height="40dp" android:layout_weight="1" android:layout_marginEnd="5dp" android:text="蓝牙" android:textSize="11sp" android:background="@drawable/bg_btn_exit" android:textColor="#0EA5E9" android:stateListAnimator="@null" />
+                              <Button android:id="@+id/btnAirplane" android:layout_width="0dp" android:layout_height="40dp" android:layout_weight="1" android:text="飞行" android:textSize="11sp" android:background="@drawable/bg_btn_exit" android:textColor="#0EA5E9" android:stateListAnimator="@null" />
+                          </LinearLayout>
+                          <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="5dp" android:orientation="horizontal">
+                              <Button android:id="@+id/btnBattery" android:layout_width="0dp" android:layout_height="40dp" android:layout_weight="1" android:layout_marginEnd="5dp" android:text="电池" android:textSize="11sp" android:background="@drawable/bg_btn_exit" android:textColor="#0EA5E9" android:stateListAnimator="@null" />
+                              <Button android:id="@+id/btnPerm" android:layout_width="0dp" android:layout_height="40dp" android:layout_weight="1" android:layout_marginEnd="5dp" android:text="权限" android:textSize="11sp" android:background="@drawable/bg_btn_exit" android:textColor="#0EA5E9" android:stateListAnimator="@null" />
+                              <Button android:id="@+id/btnLocation" android:layout_width="0dp" android:layout_height="40dp" android:layout_weight="1" android:text="位置" android:textSize="11sp" android:background="@drawable/bg_btn_exit" android:textColor="#0EA5E9" android:stateListAnimator="@null" />
+                          </LinearLayout>
+                          <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="5dp" android:orientation="horizontal">
+                              <Button android:id="@+id/btnDev" android:layout_width="0dp" android:layout_height="40dp" android:layout_weight="1" android:layout_marginEnd="5dp" android:text="开发者" android:textSize="11sp" android:background="@drawable/bg_btn_exit" android:textColor="#0EA5E9" android:stateListAnimator="@null" />
+                              <Button android:id="@+id/btnStorage" android:layout_width="0dp" android:layout_height="40dp" android:layout_weight="1" android:layout_marginEnd="5dp" android:text="存储" android:textSize="11sp" android:background="@drawable/bg_btn_exit" android:textColor="#0EA5E9" android:stateListAnimator="@null" />
+                              <Button android:id="@+id/btnSoundSettings" android:layout_width="0dp" android:layout_height="40dp" android:layout_weight="1" android:text="声音" android:textSize="11sp" android:background="@drawable/bg_btn_exit" android:textColor="#0EA5E9" android:stateListAnimator="@null" />
+                          </LinearLayout>
+                          <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="5dp" android:orientation="horizontal">
+                              <Button android:id="@+id/btnAccessibility" android:layout_width="0dp" android:layout_height="40dp" android:layout_weight="1" android:layout_marginEnd="5dp" android:text="无障碍" android:textSize="11sp" android:background="@drawable/bg_btn_exit" android:textColor="#0EA5E9" android:stateListAnimator="@null" />
+                              <Button android:id="@+id/btnInputMethod" android:layout_width="0dp" android:layout_height="40dp" android:layout_weight="1" android:layout_marginEnd="5dp" android:text="输入法" android:textSize="11sp" android:background="@drawable/bg_btn_exit" android:textColor="#0EA5E9" android:stateListAnimator="@null" />
+                              <Button android:id="@+id/btnNotification" android:layout_width="0dp" android:layout_height="40dp" android:layout_weight="1" android:text="通知" android:textSize="11sp" android:background="@drawable/bg_btn_exit" android:textColor="#0EA5E9" android:stateListAnimator="@null" />
+                          </LinearLayout>
+                          <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="5dp" android:orientation="horizontal">
+                              <Button android:id="@+id/btnDateTime" android:layout_width="0dp" android:layout_height="40dp" android:layout_weight="1" android:layout_marginEnd="5dp" android:text="时间日期" android:textSize="11sp" android:background="@drawable/bg_btn_exit" android:textColor="#0EA5E9" android:stateListAnimator="@null" />
+                              <Button android:id="@+id/btnLanguage" android:layout_width="0dp" android:layout_height="40dp" android:layout_weight="1" android:layout_marginEnd="5dp" android:text="语言" android:textSize="11sp" android:background="@drawable/bg_btn_exit" android:textColor="#0EA5E9" android:stateListAnimator="@null" />
+                              <Button android:id="@+id/btnAccount" android:layout_width="0dp" android:layout_height="40dp" android:layout_weight="1" android:text="账户" android:textSize="11sp" android:background="@drawable/bg_btn_exit" android:textColor="#0EA5E9" android:stateListAnimator="@null" />
+                          </LinearLayout>
+                      </LinearLayout>
+
+                      <LinearLayout android:id="@+id/tabAppear" android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="vertical" android:visibility="gone">
+                          <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="4dp" android:gravity="center_vertical" android:orientation="horizontal">
+                              <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="透明度" android:textColor="#9FD8EA" android:textSize="11sp" android:layout_marginEnd="8dp" />
+                              <SeekBar android:id="@+id/sbAlpha" android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:max="100" android:progress="100" android:progressBackgroundTint="#1E3A4C" android:progressTint="#22D3EE" android:thumbTint="#7DF9FF" />
+                          </LinearLayout>
+                          <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="4dp" android:text="主题颜色" android:textColor="#9FD8EA" android:textSize="11sp" />
+                          <LinearLayout android:id="@+id/colorDots" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="6dp" android:orientation="horizontal" android:gravity="center_vertical" />
+                          <Button android:id="@+id/btnClipboard" android:layout_width="match_parent" android:layout_height="40dp" android:layout_marginTop="10dp" android:text="读取剪贴板" android:textSize="11sp" android:background="@drawable/bg_btn_exit" android:textColor="#0EA5E9" android:stateListAnimator="@null" />
+                          <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="10dp" android:text="提示: 右下角三角拖动可缩放窗口" android:textColor="#67E8F9" android:textSize="10sp" />
+                      </LinearLayout>
+
+                  </FrameLayout>
+                  <View android:id="@+id/resizeHandle" android:layout_width="28dp" android:layout_height="20dp" android:layout_gravity="end" android:layout_marginTop="6dp" android:background="@drawable/bg_resize_handle" />
               </LinearLayout>
-
               <TextView android:id="@+id/miniIcon" android:layout_width="wrap_content" android:layout_height="wrap_content" android:visibility="gone" android:paddingStart="16dp" android:paddingTop="8dp" android:paddingEnd="16dp" android:paddingBottom="8dp" android:background="@drawable/bg_mini_icon" android:text="辅助" android:textColor="#22D3EE" android:textSize="14sp" android:textStyle="bold" android:shadowColor="#22D3EE" android:shadowDx="0" android:shadowDy="0" android:shadowRadius="10" />
           </FrameLayout>
           EOF
